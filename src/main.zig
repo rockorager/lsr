@@ -7,6 +7,7 @@ const posix = std.posix;
 
 const Options = struct {
     all: bool = false,
+    almost_all: bool = false,
     long: bool = false,
     directory: [:0]const u8 = ".",
 };
@@ -37,6 +38,7 @@ pub fn main() !void {
                 const str = arg[1..];
                 for (str) |b| {
                     switch (b) {
+                        'A' => cmd.opts.almost_all = true,
                         'a' => cmd.opts.all = true,
                         'l' => cmd.opts.long = true,
                         else => {
@@ -53,6 +55,8 @@ pub fn main() !void {
                     cmd.opts.all = true
                 else if (eql(opt, "long"))
                     cmd.opts.long = true
+                else if (eql(opt, "almost-all"))
+                    cmd.opts.almost_all = true
                 else {
                     const w = std.io.getStdErr().writer();
                     try w.print("Invalid opt: '{s}'", .{opt});
@@ -212,6 +216,23 @@ fn onCompletion(io: *ourio.Ring, task: ourio.Task) anyerror!void {
             const dir: std.fs.Dir = .{ .fd = fd };
 
             var results: std.ArrayListUnmanaged(Entry) = .empty;
+
+            // Preallocate some memory
+            try results.ensureUnusedCapacity(cmd.arena, 64);
+
+            // zig skips "." and "..", so we manually add them if needed
+            if (cmd.opts.all) {
+                results.appendAssumeCapacity(.{
+                    .name = ".",
+                    .kind = .directory,
+                    .statx = undefined,
+                });
+                results.appendAssumeCapacity(.{
+                    .name = "..",
+                    .kind = .directory,
+                    .statx = undefined,
+                });
+            }
 
             var iter = dir.iterate();
             while (try iter.next()) |dirent| {

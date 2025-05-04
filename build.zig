@@ -19,7 +19,7 @@ pub fn build(b: *std.Build) void {
     exe_mod.addImport("zeit", zeit_mod);
 
     const exe = b.addExecutable(.{
-        .name = "fls",
+        .name = "els",
         .root_module = exe_mod,
     });
 

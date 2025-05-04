@@ -29,7 +29,10 @@ pub fn main() !void {
     var arena = std.heap.ArenaAllocator.init(gpa);
     defer arena.deinit();
 
-    var cmd: Command = .{ .arena = arena.allocator() };
+    var sfb = std.heap.stackFallback(1 << 20, arena.allocator());
+    const allocator = sfb.get();
+
+    var cmd: Command = .{ .arena = allocator };
 
     var args = std.process.args();
     // skip binary
@@ -71,7 +74,7 @@ pub fn main() !void {
         }
     }
 
-    var ring: ourio.Ring = try .init(arena.allocator(), 64);
+    var ring: ourio.Ring = try .init(allocator, 256);
     defer ring.deinit();
 
     _ = try ring.open(cmd.opts.directory, .{ .DIRECTORY = true, .CLOEXEC = true }, 0, .{

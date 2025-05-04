@@ -92,6 +92,11 @@ pub fn main() !void {
             .cb = onCompletion,
             .msg = @intFromEnum(Msg.passwd),
         });
+        _ = try ring.open("/etc/group", .{ .CLOEXEC = true }, 0, .{
+            .ptr = &cmd,
+            .cb = onCompletion,
+            .msg = @intFromEnum(Msg.group),
+        });
     }
 
     try ring.run(.until_done);
@@ -106,14 +111,16 @@ pub fn main() !void {
         const one_year_ago = try now.subtract(.{ .days = 365 });
         for (cmd.entries) |entry| {
             const user = cmd.getUser(entry.statx.uid).?;
+            const group = cmd.getGroup(entry.statx.gid).?;
             const ts = @as(i128, entry.statx.mtime.sec) * std.time.ns_per_s;
             const inst: zeit.Instant = .{ .timestamp = ts, .timezone = &tz };
             const time = inst.time();
 
             if (ts > one_year_ago.timestamp) {
-                try bw.writer().print("{s} {s} {d: >2} {s} {d: >2}:{d:0>2} {s}\r\n", .{
+                try bw.writer().print("{s} {s} {s} {d: >2} {s} {d: >2}:{d:0>2} {s}\r\n", .{
                     &entry.modeStr(),
                     user.name,
+                    group.name,
                     time.day,
                     time.month.shortName(),
                     time.hour,
@@ -121,9 +128,10 @@ pub fn main() !void {
                     entry.name,
                 });
             } else {
-                try bw.writer().print("{s} {s} {d: >2} {s} {d: >5} {s}\r\n", .{
+                try bw.writer().print("{s} {s} {s} {d: >2} {s} {d: >5} {s}\r\n", .{
                     &entry.modeStr(),
                     user.name,
+                    group.name,
                     time.day,
                     time.month.shortName(),
                     time.year,
@@ -148,11 +156,19 @@ const Command = struct {
     entries: []Entry = &.{},
 
     tz: ?zeit.TimeZone = null,
+    groups: std.ArrayListUnmanaged(Group) = .empty,
     users: std.ArrayListUnmanaged(User) = .empty,
 
     fn getUser(self: Command, uid: posix.uid_t) ?User {
         for (self.users.items) |user| {
             if (user.uid == uid) return user;
+        }
+        return null;
+    }
+
+    fn getGroup(self: Command, gid: posix.gid_t) ?Group {
+        for (self.groups.items) |group| {
+            if (group.gid == gid) return group;
         }
         return null;
     }
@@ -162,10 +178,12 @@ const Msg = enum(u16) {
     cwd,
     localtime,
     passwd,
+    group,
     stat,
 
     read_localtime,
     read_passwd,
+    read_group,
 };
 
 const User = struct {
@@ -174,6 +192,15 @@ const User = struct {
 
     fn lessThan(_: void, lhs: User, rhs: User) bool {
         return lhs.uid < rhs.uid;
+    }
+};
+
+const Group = struct {
+    gid: posix.gid_t,
+    name: []const u8,
+
+    fn lessThan(_: void, lhs: Group, rhs: Group) bool {
+        return lhs.gid < rhs.gid;
     }
 };
 
@@ -332,6 +359,48 @@ fn onCompletion(io: *ourio.Ring, task: ourio.Task) anyerror!void {
                 cmd.users.appendAssumeCapacity(user);
             }
             std.mem.sort(User, cmd.users.items, {}, User.lessThan);
+        },
+
+        .group => {
+            const fd = try result.open;
+
+            const buffer = try cmd.arena.alloc(u8, 8192);
+            _ = try io.read(fd, buffer, .{
+                .cb = onCompletion,
+                .ptr = cmd,
+                .msg = @intFromEnum(Msg.read_group),
+            });
+        },
+
+        .read_group => {
+            const n = try result.read;
+            _ = try io.close(task.req.read.fd, .{});
+            const bytes = task.req.read.buffer[0..n];
+
+            var lines = std.mem.splitScalar(u8, bytes, '\n');
+
+            var line_count: usize = 0;
+            while (lines.next()) |_| {
+                line_count += 1;
+            }
+            try cmd.groups.ensureUnusedCapacity(cmd.arena, line_count);
+            lines.reset();
+            // <name>:<throwaway>:<uid><...garbage>
+            while (lines.next()) |line| {
+                if (line.len == 0) continue;
+                var iter = std.mem.splitScalar(u8, line, ':');
+                const name = iter.first();
+                _ = iter.next();
+                const gid = iter.next().?;
+
+                const group: Group = .{
+                    .name = name,
+                    .gid = try std.fmt.parseInt(u32, gid, 10),
+                };
+
+                cmd.groups.appendAssumeCapacity(group);
+            }
+            std.mem.sort(Group, cmd.groups.items, {}, Group.lessThan);
         },
 
         else => {},

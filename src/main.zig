@@ -150,7 +150,6 @@ pub fn main() !void {
     });
 
     if (cmd.opts.long) {
-        // We need to also open /etc/localtime and /etc/passwd
         _ = try ring.open("/etc/localtime", .{ .CLOEXEC = true }, 0, .{
             .ptr = &cmd,
             .cb = onCompletion,
@@ -215,6 +214,24 @@ fn printLong(cmd: Command, writer: anytype) !void {
     const one_year_ago = try now.subtract(.{ .days = 365 });
     const colors = cmd.opts.colors;
 
+    const longest_group, const longest_user, const longest_size, const longest_suffix = blk: {
+        var n_group: usize = 0;
+        var n_user: usize = 0;
+        var n_size: usize = 0;
+        var n_suff: usize = 0;
+        for (cmd.entries) |entry| {
+            const group = cmd.getGroup(entry.statx.gid).?;
+            const user = cmd.getGroup(entry.statx.uid).?;
+            var buf: [16]u8 = undefined;
+            const size = try entry.humanReadableSize(&buf);
+            n_group = @max(n_group, group.name.len);
+            n_user = @max(n_user, user.name.len);
+            n_size = @max(n_size, size.len);
+            n_suff = @max(n_suff, entry.humanReadableSuffix().len);
+        }
+        break :blk .{ n_group, n_user, n_size, n_suff };
+    };
+
     for (cmd.entries) |entry| {
         const user = cmd.getUser(entry.statx.uid).?;
         const group = cmd.getGroup(entry.statx.gid).?;
@@ -224,10 +241,27 @@ fn printLong(cmd: Command, writer: anytype) !void {
 
         const mode = entry.modeStr();
 
-        try writer.print("{s} {s} {s} {d: >2} {s} ", .{
-            &mode,
-            user.name,
-            group.name,
+        try writer.writeAll(&mode);
+        try writer.writeByte(' ');
+        try writer.writeAll(user.name);
+        try writer.writeByteNTimes(' ', longest_user - user.name.len);
+        try writer.writeByte(' ');
+        try writer.writeAll(group.name);
+        try writer.writeByteNTimes(' ', longest_group - group.name.len);
+        try writer.writeByte(' ');
+
+        var size_buf: [16]u8 = undefined;
+        const size = try entry.humanReadableSize(&size_buf);
+        const suffix = entry.humanReadableSuffix();
+
+        try writer.writeByteNTimes(' ', longest_size - size.len);
+        try writer.writeAll(size);
+        try writer.writeByte(' ');
+        try writer.writeAll(suffix);
+        try writer.writeByteNTimes(' ', longest_suffix - suffix.len);
+        try writer.writeByte(' ');
+
+        try writer.print("{d: >2} {s} ", .{
             time.day,
             time.month.shortName(),
         });
@@ -350,6 +384,47 @@ const Entry = struct {
         if (self.statx.mode & posix.S.IWOTH != 0) mode[8] = 'w';
         if (self.statx.mode & posix.S.IXOTH != 0) mode[9] = 'x';
         return mode;
+    }
+
+    fn humanReadableSuffix(self: Entry) []const u8 {
+        if (self.kind == .directory) return "-";
+
+        const buckets = [_]u64{
+            1 << 40, // TB
+            1 << 30, // GB
+            1 << 20, // MB
+            1 << 10, // KB
+        };
+
+        const suffixes = [_][]const u8{ "TB", "GB", "MB", "KB" };
+
+        for (buckets, suffixes) |bucket, suffix| {
+            if (self.statx.size >= bucket) {
+                return suffix;
+            }
+        }
+        return "B";
+    }
+
+    fn humanReadableSize(self: Entry, out: []u8) ![]u8 {
+        if (self.kind == .directory) return &.{};
+
+        const buckets = [_]u64{
+            1 << 40, // TB
+            1 << 30, // GB
+            1 << 20, // MB
+            1 << 10, // KB
+        };
+
+        for (buckets) |bucket| {
+            if (self.statx.size >= bucket) {
+                const size_f: f64 = @floatFromInt(self.statx.size);
+                const bucket_f: f64 = @floatFromInt(bucket);
+                const val = size_f / bucket_f;
+                return std.fmt.bufPrint(out, "{d:0.1}", .{val});
+            }
+        }
+        return std.fmt.bufPrint(out, "{d}", .{self.statx.size});
     }
 };
 

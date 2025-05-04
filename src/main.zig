@@ -7,8 +7,10 @@ const posix = std.posix;
 
 const Options = struct {
     all: bool = false,
-    almost_all: bool = false,
+    @"almost-all": bool = false,
+    @"group-directories-first": bool = true,
     long: bool = false,
+
     directory: [:0]const u8 = ".",
 };
 
@@ -38,7 +40,7 @@ pub fn main() !void {
                 const str = arg[1..];
                 for (str) |b| {
                     switch (b) {
-                        'A' => cmd.opts.almost_all = true,
+                        'A' => cmd.opts.@"almost-all" = true,
                         'a' => cmd.opts.all = true,
                         'l' => cmd.opts.long = true,
                         else => {
@@ -56,7 +58,7 @@ pub fn main() !void {
                 else if (eql(opt, "long"))
                     cmd.opts.long = true
                 else if (eql(opt, "almost-all"))
-                    cmd.opts.almost_all = true
+                    cmd.opts.@"almost-all" = true
                 else {
                     const w = std.io.getStdErr().writer();
                     try w.print("Invalid opt: '{s}'", .{opt});
@@ -131,7 +133,10 @@ pub fn main() !void {
         }
     } else {
         for (cmd.entries) |entry| {
-            try bw.writer().print("{s}\r\n", .{entry.name});
+            try bw.writer().print("{s}{s}\r\n", .{
+                entry.name,
+                if (entry.kind == .directory) "/" else "",
+            });
         }
     }
     try bw.flush();
@@ -177,7 +182,11 @@ const Entry = struct {
     kind: std.fs.File.Kind,
     statx: ourio.Statx,
 
-    fn lessThan(_: Options, lhs: Entry, rhs: Entry) bool {
+    fn lessThan(opts: Options, lhs: Entry, rhs: Entry) bool {
+        if (opts.@"group-directories-first" and lhs.kind != rhs.kind) {
+            return lhs.kind == .directory;
+        }
+
         return std.ascii.orderIgnoreCase(lhs.name, rhs.name).compare(.lt);
     }
 

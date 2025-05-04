@@ -120,7 +120,7 @@ pub fn main() !void {
             const time = inst.time();
 
             if (ts > one_year_ago.timestamp) {
-                try bw.writer().print("{s} {s} {s} {d: >2} {s} {d: >2}:{d:0>2} {s}\r\n", .{
+                try bw.writer().print("{s} {s} {s} {d: >2} {s} {d: >2}:{d:0>2} {s}{s}{s}\r\n", .{
                     &entry.modeStr(),
                     user.name,
                     group.name,
@@ -129,16 +129,20 @@ pub fn main() !void {
                     time.hour,
                     time.minute,
                     entry.name,
+                    if (entry.kind == .sym_link) " -> " else "",
+                    if (entry.kind == .sym_link) entry.link_name else "",
                 });
             } else {
-                try bw.writer().print("{s} {s} {s} {d: >2} {s} {d: >5} {s}\r\n", .{
+                try bw.writer().print("{s} {s} {s} {d: >2} {s} {d: >5} {s}{s}{s}\r\n", .{
                     &entry.modeStr(),
                     user.name,
                     group.name,
                     time.day,
                     time.month.shortName(),
-                    time.year,
+                    @as(u32, @intCast(time.year)),
                     entry.name,
+                    if (entry.kind == .sym_link) " -> " else "",
+                    if (entry.kind == .sym_link) entry.link_name else "",
                 });
             }
         }
@@ -211,9 +215,13 @@ const Entry = struct {
     name: [:0]const u8,
     kind: std.fs.File.Kind,
     statx: ourio.Statx,
+    link_name: [:0]const u8 = "",
 
     fn lessThan(opts: Options, lhs: Entry, rhs: Entry) bool {
-        if (opts.@"group-directories-first" and lhs.kind != rhs.kind) {
+        if (opts.@"group-directories-first" and
+            lhs.kind != rhs.kind and
+            (lhs.kind == .directory or rhs.kind == .directory))
+        {
             return lhs.kind == .directory;
         }
 
@@ -224,6 +232,7 @@ const Entry = struct {
         var mode = [_]u8{'-'} ** 10;
         switch (self.kind) {
             .directory => mode[0] = 'd',
+            .sym_link => mode[0] = 'l',
             else => {},
         }
 
@@ -290,6 +299,14 @@ fn onCompletion(io: *ourio.Ring, task: ourio.Task) anyerror!void {
                     cmd.arena,
                     &.{ cmd.opts.directory, entry.name },
                 );
+
+                if (entry.kind == .sym_link) {
+                    var buf: [std.fs.max_path_bytes]u8 = undefined;
+
+                    // NOTE: Sadly, we can't do readlink via io_uring
+                    const link = try posix.readlink(path, &buf);
+                    entry.link_name = try cmd.arena.dupeZ(u8, link);
+                }
                 _ = try io.stat(path, &entry.statx, .{
                     .cb = onCompletion,
                     .ptr = cmd,

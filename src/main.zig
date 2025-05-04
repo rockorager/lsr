@@ -8,10 +8,53 @@ const posix = std.posix;
 const Options = struct {
     all: bool = false,
     @"almost-all": bool = false,
+    color: enum { none, auto, always } = .auto,
     @"group-directories-first": bool = true,
     long: bool = false,
 
     directory: [:0]const u8 = ".",
+
+    isatty: bool = false,
+    colors: Colors = .none,
+
+    const Colors = struct {
+        reset: []const u8,
+        dir: []const u8,
+        executable: []const u8,
+        sym_link: []const u8,
+
+        const none: Colors = .{
+            .reset = "",
+            .dir = "",
+            .executable = "",
+            .sym_link = "",
+        };
+
+        const default: Colors = .{
+            .reset = _reset,
+            .dir = bold ++ blue,
+            .executable = bold ++ green,
+            .sym_link = bold ++ purple,
+        };
+
+        const _reset = "\x1b[m";
+        const red = "\x1b[31m";
+        const green = "\x1b[32m";
+        const yellow = "\x1b[33m";
+        const blue = "\x1b[34m";
+        const purple = "\x1b[35m";
+        const cyan = "\x1b[36m";
+        const fg = "\x1b[37m";
+
+        const bold = "\x1b[1m";
+    };
+    fn useColor(self: Options) bool {
+        switch (self.color) {
+            .none => return false,
+            .always => return true,
+            .auto => return self.isatty,
+        }
+    }
 };
 
 pub fn main() !void {
@@ -55,14 +98,37 @@ pub fn main() !void {
                 }
             },
             .long => {
-                const opt = arg[2..];
-                if (eql(opt, "all"))
-                    cmd.opts.all = true
-                else if (eql(opt, "long"))
-                    cmd.opts.long = true
-                else if (eql(opt, "almost-all"))
-                    cmd.opts.@"almost-all" = true
-                else {
+                var split = std.mem.splitScalar(u8, arg[2..], '=');
+                const opt = split.first();
+                const val = split.rest();
+                if (eql(opt, "all")) {
+                    if (val.len == 0 or eql(val, "true"))
+                        cmd.opts.all = true
+                    else if (eql(val, "false"))
+                        cmd.opts.all = false;
+                } else if (eql(opt, "long")) {
+                    if (val.len == 0 or eql(val, "true"))
+                        cmd.opts.long = true
+                    else if (eql(val, "false"))
+                        cmd.opts.long = false;
+                } else if (eql(opt, "almost-all")) {
+                    if (val.len == 0 or eql(val, "true"))
+                        cmd.opts.@"almost-all" = true
+                    else if (eql(val, "false"))
+                        cmd.opts.@"almost-all" = false;
+                } else if (eql(opt, "group-directories-first")) {
+                    if (val.len == 0 or eql(val, "true"))
+                        cmd.opts.@"group-directories-first" = true
+                    else if (eql(val, "false"))
+                        cmd.opts.@"group-directories-first" = false;
+                } else if (eql(opt, "color")) {
+                    if (eql(val, "always"))
+                        cmd.opts.color = .always
+                    else if (eql(val, "auto"))
+                        cmd.opts.color = .auto
+                    else if (eql(val, "none"))
+                        cmd.opts.color = .none;
+                } else {
                     const w = std.io.getStdErr().writer();
                     try w.print("Invalid opt: '{s}'", .{opt});
                     std.process.exit(1);
@@ -102,6 +168,14 @@ pub fn main() !void {
         });
     }
 
+    if (cmd.opts.color == .auto) {
+        cmd.opts.isatty = posix.isatty(std.io.getStdOut().handle);
+    }
+
+    if (cmd.opts.useColor()) {
+        cmd.opts.colors = .default;
+    }
+
     try ring.run(.until_done);
 
     std.sort.insertion(Entry, cmd.entries, cmd.opts, Entry.lessThan);
@@ -109,52 +183,80 @@ pub fn main() !void {
     const stdout = std.io.getStdOut();
     var bw = std.io.bufferedWriter(stdout.writer());
     if (cmd.opts.long) {
-        const tz = cmd.tz.?;
-        const now = zeit.instant(.{}) catch unreachable;
-        const one_year_ago = try now.subtract(.{ .days = 365 });
-        for (cmd.entries) |entry| {
-            const user = cmd.getUser(entry.statx.uid).?;
-            const group = cmd.getGroup(entry.statx.gid).?;
-            const ts = @as(i128, entry.statx.mtime.sec) * std.time.ns_per_s;
-            const inst: zeit.Instant = .{ .timestamp = ts, .timezone = &tz };
-            const time = inst.time();
-
-            if (ts > one_year_ago.timestamp) {
-                try bw.writer().print("{s} {s} {s} {d: >2} {s} {d: >2}:{d:0>2} {s}{s}{s}\r\n", .{
-                    &entry.modeStr(),
-                    user.name,
-                    group.name,
-                    time.day,
-                    time.month.shortName(),
-                    time.hour,
-                    time.minute,
-                    entry.name,
-                    if (entry.kind == .sym_link) " -> " else "",
-                    if (entry.kind == .sym_link) entry.link_name else "",
-                });
-            } else {
-                try bw.writer().print("{s} {s} {s} {d: >2} {s} {d: >5} {s}{s}{s}\r\n", .{
-                    &entry.modeStr(),
-                    user.name,
-                    group.name,
-                    time.day,
-                    time.month.shortName(),
-                    @as(u32, @intCast(time.year)),
-                    entry.name,
-                    if (entry.kind == .sym_link) " -> " else "",
-                    if (entry.kind == .sym_link) entry.link_name else "",
-                });
-            }
-        }
+        try printLong(cmd, bw.writer());
     } else {
-        for (cmd.entries) |entry| {
-            try bw.writer().print("{s}{s}\r\n", .{
-                entry.name,
-                if (entry.kind == .directory) "/" else "",
-            });
-        }
+        try printShort(cmd, bw.writer());
     }
     try bw.flush();
+}
+
+fn printShort(cmd: Command, writer: anytype) !void {
+    const colors = cmd.opts.colors;
+    for (cmd.entries) |entry| {
+        const mode = entry.modeStr();
+        switch (entry.kind) {
+            .directory => try writer.writeAll(colors.dir),
+            .sym_link => try writer.writeAll(colors.sym_link),
+            else => {
+                if (isExecutable(mode)) {
+                    try writer.writeAll(colors.executable);
+                }
+            },
+        }
+        try writer.writeAll(entry.name);
+        try writer.writeAll(colors.reset);
+        try writer.writeAll("\r\n");
+    }
+}
+
+fn printLong(cmd: Command, writer: anytype) !void {
+    const tz = cmd.tz.?;
+    const now = zeit.instant(.{}) catch unreachable;
+    const one_year_ago = try now.subtract(.{ .days = 365 });
+    const colors = cmd.opts.colors;
+
+    for (cmd.entries) |entry| {
+        const user = cmd.getUser(entry.statx.uid).?;
+        const group = cmd.getGroup(entry.statx.gid).?;
+        const ts = @as(i128, entry.statx.mtime.sec) * std.time.ns_per_s;
+        const inst: zeit.Instant = .{ .timestamp = ts, .timezone = &tz };
+        const time = inst.time();
+
+        const mode = entry.modeStr();
+
+        try writer.print("{s} {s} {s} {d: >2} {s} ", .{
+            &mode,
+            user.name,
+            group.name,
+            time.day,
+            time.month.shortName(),
+        });
+
+        if (ts > one_year_ago.timestamp) {
+            try writer.print("{d: >2}:{d:0>2} ", .{ time.hour, time.minute });
+        } else {
+            try writer.print("{d: >5} ", .{@as(u32, @intCast(time.year))});
+        }
+
+        switch (entry.kind) {
+            .directory => try writer.writeAll(colors.dir),
+            .sym_link => try writer.writeAll(colors.sym_link),
+            else => {
+                if (isExecutable(mode)) {
+                    try writer.writeAll(colors.executable);
+                }
+            },
+        }
+        try writer.writeAll(entry.name);
+        try writer.writeAll(colors.reset);
+
+        if (entry.kind == .sym_link) {
+            try writer.writeAll(" -> ");
+            try writer.writeAll(entry.link_name);
+        }
+
+        try writer.writeAll("\r\n");
+    }
 }
 
 const Command = struct {
@@ -435,4 +537,8 @@ fn optKind(a: []const u8) enum { short, long, positional } {
     if (std.mem.startsWith(u8, a, "--")) return .long;
     if (std.mem.startsWith(u8, a, "-")) return .short;
     return .positional;
+}
+
+fn isExecutable(mode: [10]u8) bool {
+    return mode[3] == 'x' or mode[6] == 'x' or mode[9] == 'x';
 }

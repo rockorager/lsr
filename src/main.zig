@@ -262,12 +262,8 @@ pub fn main() !void {
 }
 
 fn printShortColumns(cmd: Command, writer: anytype) !void {
-    std.log.debug("here 1", .{});
     const ws = cmd.opts.winsize orelse return printShortOnePerLine(cmd, writer);
-    std.log.debug("here 2", .{});
     if (ws.col == 0) return printShortOnePerLine(cmd, writer);
-
-    std.log.debug("here 3", .{});
 
     const icon_width: u2 = if (cmd.opts.useIcons()) 2 else 0;
 
@@ -281,7 +277,6 @@ fn printShortColumns(cmd: Command, writer: anytype) !void {
     var columns: std.ArrayListUnmanaged(Column) = try .initCapacity(cmd.arena, n_cols);
 
     outer: while (n_cols > 0) {
-        std.log.debug("n_cols = {d}", .{n_cols});
         columns.clearRetainingCapacity();
         const n_rows = std.math.divCeil(usize, cmd.entries.len, n_cols) catch unreachable;
         const padding = (n_cols - 1) * 2;
@@ -298,8 +293,6 @@ fn printShortColumns(cmd: Command, writer: anytype) !void {
         }
 
         for (0..n_cols) |i| {
-            std.log.debug("items={d}, idx={d}", .{ cmd.entries.len, idx });
-            std.log.debug("i={d}, n_cols={d}, short_cols={d}, is_short={}", .{ i, n_cols, short_cols, isShortColumn(i, n_cols, short_cols) });
             const col_entries = if (isShortColumn(i, n_cols, short_cols)) n_rows - 1 else n_rows;
             const entries = cmd.entries[idx .. idx + col_entries];
             idx += col_entries;
@@ -330,7 +323,6 @@ fn printShortColumns(cmd: Command, writer: anytype) !void {
 
     if (n_cols <= 1) return printShortOnePerLine(cmd, writer);
 
-    std.log.debug("here 4", .{});
     const n_rows = std.math.divCeil(usize, cmd.entries.len, columns.items.len) catch unreachable;
     for (0..n_rows) |row| {
         for (columns.items, 0..) |column, i| {

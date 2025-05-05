@@ -3,7 +3,6 @@ const builtin = @import("builtin");
 const ourio = @import("ourio");
 const zeit = @import("zeit");
 
-const assert = std.debug.assert;
 const posix = std.posix;
 
 const usage =
@@ -123,9 +122,7 @@ pub fn main() !void {
 
     cmd.opts.winsize = getWinsize(std.io.getStdOut().handle);
 
-    if (cmd.opts.isatty()) {
-        cmd.opts.shortview = .columns;
-    }
+    cmd.opts.shortview = if (cmd.opts.isatty()) .columns else .oneline;
 
     const stdout = std.io.getStdOut().writer();
     const stderr = std.io.getStdErr().writer();
@@ -248,26 +245,25 @@ pub fn main() !void {
 
     if (cmd.entries.len == 0) return;
 
-    if (cmd.opts.long) {
-        try printLong(cmd, bw.writer());
-    } else if (!cmd.opts.isatty()) {
-        try printShortOnePerLine(cmd, bw.writer());
-    } else {
-        switch (cmd.opts.shortview) {
-            .columns => try printShortColumns(cmd, bw.writer()),
-            .oneline => try printShortOnePerLine(cmd, bw.writer()),
-        }
+    if (cmd.opts.long)
+        try printLong(cmd, bw.writer())
+    else switch (cmd.opts.shortview) {
+        .columns => try printShortColumns(cmd, bw.writer()),
+        .oneline => try printShortOnePerLine(cmd, bw.writer()),
     }
     try bw.flush();
 }
 
 fn printShortColumns(cmd: Command, writer: anytype) !void {
-    const ws = cmd.opts.winsize orelse return printShortOnePerLine(cmd, writer);
-    if (ws.col == 0) return printShortOnePerLine(cmd, writer);
+    const win_width = blk: {
+        const ws = cmd.opts.winsize orelse break :blk 80;
+        break :blk ws.col;
+    };
+    if (win_width == 0) return printShortOnePerLine(cmd, writer);
 
     const icon_width: u2 = if (cmd.opts.useIcons()) 2 else 0;
 
-    var n_cols = @min(ws.col, cmd.entries.len);
+    var n_cols = @min(win_width, cmd.entries.len);
 
     const Column = struct {
         width: usize = 0,
@@ -287,7 +283,7 @@ fn printShortColumns(cmd: Command, writer: anytype) !void {
         var idx: usize = 0;
         var line_width: usize = padding + icon_width * n_cols;
 
-        if (line_width > ws.col) {
+        if (line_width > win_width) {
             n_cols -= 1;
             continue :outer;
         }
@@ -312,7 +308,7 @@ fn printShortColumns(cmd: Command, writer: anytype) !void {
                 .width = col_width,
             });
 
-            if (line_width > ws.col) {
+            if (line_width > win_width) {
                 n_cols -= 1;
                 continue :outer;
             }

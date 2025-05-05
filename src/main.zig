@@ -3,33 +3,37 @@ const builtin = @import("builtin");
 const ourio = @import("ourio");
 const zeit = @import("zeit");
 
+const assert = std.debug.assert;
 const posix = std.posix;
 
 const usage =
     \\Usage: 
     \\  els [options] [directory]
     \\
-    \\  --help                         Print this message and exit
+    \\  --help                Print this message and exit
     \\
     \\DISPLAY OPTIONS
-    \\  -a, --all                      Show files that start with a dot (ASCII 0x2E)
-    \\  -A, --almost-all               Like --all, but skips implicit "." and ".." directories
-    \\      --color=WHEN               When to use colors (always, auto, never)
-    \\      --icons=WHEN               When to display icons (always, auto, never)
-    \\  -l, --long                     Display extended file metadata
+    \\  -1, --oneline         Print entries one per line
+    \\  -a, --all             Show files that start with a dot (ASCII 0x2E)
+    \\  -A, --almost-all      Like --all, but skips implicit "." and ".." directories
+    \\  -C, --columns         Print the output in columns
+    \\      --color=WHEN      When to use colors (always, auto, never)
+    \\      --icons=WHEN      When to display icons (always, auto, never)
+    \\  -l, --long            Display extended file metadata
 ;
 
 const Options = struct {
     all: bool = false,
     @"almost-all": bool = false,
     color: When = .auto,
+    shortview: enum { columns, oneline } = .oneline,
     @"group-directories-first": bool = true,
     icons: When = .auto,
     long: bool = false,
 
     directory: [:0]const u8 = ".",
 
-    isatty: bool = false,
+    winsize: ?posix.winsize = null,
     colors: Colors = .none,
 
     const When = enum {
@@ -80,7 +84,7 @@ const Options = struct {
         switch (self.color) {
             .never => return false,
             .always => return true,
-            .auto => return self.isatty,
+            .auto => return self.isatty(),
         }
     }
 
@@ -88,8 +92,12 @@ const Options = struct {
         switch (self.icons) {
             .never => return false,
             .always => return true,
-            .auto => return self.isatty,
+            .auto => return self.isatty(),
         }
+    }
+
+    fn isatty(self: Options) bool {
+        return self.winsize != null;
     }
 };
 
@@ -113,6 +121,16 @@ pub fn main() !void {
 
     var cmd: Command = .{ .arena = allocator };
 
+    cmd.opts.winsize = getWinsize(std.io.getStdOut().handle);
+
+    if (cmd.opts.isatty()) {
+        cmd.opts.shortview = .columns;
+    }
+
+    const stdout = std.io.getStdOut().writer();
+    const stderr = std.io.getStdErr().writer();
+    var bw = std.io.bufferedWriter(stdout);
+
     var args = std.process.args();
     // skip binary
     _ = args.next();
@@ -122,12 +140,13 @@ pub fn main() !void {
                 const str = arg[1..];
                 for (str) |b| {
                     switch (b) {
+                        '1' => cmd.opts.shortview = .oneline,
                         'A' => cmd.opts.@"almost-all" = true,
+                        'C' => cmd.opts.shortview = .columns,
                         'a' => cmd.opts.all = true,
                         'l' => cmd.opts.long = true,
                         else => {
-                            const w = std.io.getStdErr().writer();
-                            try w.print("Invalid opt: '{c}'", .{b});
+                            try stderr.print("Invalid opt: '{c}'", .{b});
                             std.process.exit(1);
                         },
                     }
@@ -138,42 +157,51 @@ pub fn main() !void {
                 const opt = split.first();
                 const val = split.rest();
                 if (eql(opt, "all")) {
-                    if (val.len == 0 or eql(val, "true"))
-                        cmd.opts.all = true
-                    else if (eql(val, "false"))
-                        cmd.opts.all = false;
+                    cmd.opts.all = parseArgBool(val) orelse {
+                        try stderr.print("Invalid boolean: '{s}'", .{val});
+                        std.process.exit(1);
+                    };
                 } else if (eql(opt, "long")) {
-                    if (val.len == 0 or eql(val, "true"))
-                        cmd.opts.long = true
-                    else if (eql(val, "false"))
-                        cmd.opts.long = false;
+                    cmd.opts.long = parseArgBool(val) orelse {
+                        try stderr.print("Invalid boolean: '{s}'", .{val});
+                        std.process.exit(1);
+                    };
                 } else if (eql(opt, "almost-all")) {
-                    if (val.len == 0 or eql(val, "true"))
-                        cmd.opts.@"almost-all" = true
-                    else if (eql(val, "false"))
-                        cmd.opts.@"almost-all" = false;
+                    cmd.opts.@"almost-all" = parseArgBool(val) orelse {
+                        try stderr.print("Invalid boolean: '{s}'", .{val});
+                        std.process.exit(1);
+                    };
                 } else if (eql(opt, "group-directories-first")) {
-                    if (val.len == 0 or eql(val, "true"))
-                        cmd.opts.@"group-directories-first" = true
-                    else if (eql(val, "false"))
-                        cmd.opts.@"group-directories-first" = false;
+                    cmd.opts.@"group-directories-first" = parseArgBool(val) orelse {
+                        try stderr.print("Invalid boolean: '{s}'", .{val});
+                        std.process.exit(1);
+                    };
                 } else if (eql(opt, "color")) {
                     cmd.opts.color = std.meta.stringToEnum(Options.When, val) orelse {
-                        const w = std.io.getStdErr().writer();
-                        try w.print("Invalid color option: '{s}'", .{val});
+                        try stderr.print("Invalid color option: '{s}'", .{val});
                         std.process.exit(1);
                     };
                 } else if (eql(opt, "icons")) {
                     cmd.opts.icons = std.meta.stringToEnum(Options.When, val) orelse {
-                        const w = std.io.getStdErr().writer();
-                        try w.print("Invalid color option: '{s}'", .{val});
+                        try stderr.print("Invalid color option: '{s}'", .{val});
                         std.process.exit(1);
                     };
+                } else if (eql(opt, "columns")) {
+                    const c = parseArgBool(val) orelse {
+                        try stderr.print("Invalid columns option: '{s}'", .{val});
+                        std.process.exit(1);
+                    };
+                    cmd.opts.shortview = if (c) .columns else .oneline;
+                } else if (eql(opt, "oneline")) {
+                    const o = parseArgBool(val) orelse {
+                        try stderr.print("Invalid oneline option: '{s}'", .{val});
+                        std.process.exit(1);
+                    };
+                    cmd.opts.shortview = if (o) .oneline else .columns;
                 } else if (eql(opt, "help")) {
-                    return std.io.getStdErr().writeAll(usage);
+                    return stderr.writeAll(usage);
                 } else {
-                    const w = std.io.getStdErr().writer();
-                    try w.print("Invalid opt: '{s}'", .{opt});
+                    try stderr.print("Invalid opt: '{s}'", .{opt});
                     std.process.exit(1);
                 }
             },
@@ -181,6 +209,10 @@ pub fn main() !void {
                 cmd.opts.directory = arg;
             },
         }
+    }
+
+    if (cmd.opts.useColor()) {
+        cmd.opts.colors = .default;
     }
 
     var ring: ourio.Ring = try .init(allocator, 256);
@@ -210,55 +242,154 @@ pub fn main() !void {
         });
     }
 
-    if (cmd.opts.color == .auto) {
-        cmd.opts.isatty = posix.isatty(std.io.getStdOut().handle);
-    }
-
-    if (cmd.opts.useColor()) {
-        cmd.opts.colors = .default;
-    }
-
     try ring.run(.until_done);
 
     std.sort.insertion(Entry, cmd.entries, cmd.opts, Entry.lessThan);
 
-    const stdout = std.io.getStdOut();
-    var bw = std.io.bufferedWriter(stdout.writer());
+    if (cmd.entries.len == 0) return;
+
     if (cmd.opts.long) {
         try printLong(cmd, bw.writer());
+    } else if (!cmd.opts.isatty()) {
+        try printShortOnePerLine(cmd, bw.writer());
     } else {
-        try printShort(cmd, bw.writer());
+        switch (cmd.opts.shortview) {
+            .columns => try printShortColumns(cmd, bw.writer()),
+            .oneline => try printShortOnePerLine(cmd, bw.writer()),
+        }
     }
     try bw.flush();
 }
 
-fn printShort(cmd: Command, writer: anytype) !void {
-    const colors = cmd.opts.colors;
-    for (cmd.entries) |entry| {
-        if (cmd.opts.useIcons()) {
-            const icon = Icon.get(entry, cmd.opts);
+fn printShortColumns(cmd: Command, writer: anytype) !void {
+    std.log.debug("here 1", .{});
+    const ws = cmd.opts.winsize orelse return printShortOnePerLine(cmd, writer);
+    std.log.debug("here 2", .{});
+    if (ws.col == 0) return printShortOnePerLine(cmd, writer);
 
-            if (cmd.opts.useColor()) {
-                try writer.writeAll(icon.color);
-                try writer.writeAll(icon.icon);
-                try writer.writeAll(colors.reset);
-            } else {
-                try writer.writeAll(icon.icon);
+    std.log.debug("here 3", .{});
+
+    const icon_width: u2 = if (cmd.opts.useIcons()) 2 else 0;
+
+    var n_cols = @min(ws.col, cmd.entries.len);
+
+    const Column = struct {
+        width: usize = 0,
+        entries: []const Entry = &.{},
+    };
+
+    var columns: std.ArrayListUnmanaged(Column) = try .initCapacity(cmd.arena, n_cols);
+
+    outer: while (n_cols > 0) {
+        std.log.debug("n_cols = {d}", .{n_cols});
+        columns.clearRetainingCapacity();
+        const n_rows = std.math.divCeil(usize, cmd.entries.len, n_cols) catch unreachable;
+        const padding = (n_cols - 1) * 2;
+
+        // The number of columns that are short by one entry
+        const short_cols = n_cols * n_rows - cmd.entries.len;
+
+        var idx: usize = 0;
+        var line_width: usize = padding + icon_width * n_cols;
+
+        if (line_width > ws.col) {
+            n_cols -= 1;
+            continue :outer;
+        }
+
+        for (0..n_cols) |i| {
+            std.log.debug("items={d}, idx={d}", .{ cmd.entries.len, idx });
+            std.log.debug("i={d}, n_cols={d}, short_cols={d}, is_short={}", .{ i, n_cols, short_cols, isShortColumn(i, n_cols, short_cols) });
+            const col_entries = if (isShortColumn(i, n_cols, short_cols)) n_rows - 1 else n_rows;
+            const entries = cmd.entries[idx .. idx + col_entries];
+            idx += col_entries;
+
+            var max_width: usize = 0;
+            for (entries) |entry| {
+                max_width = @max(max_width, entry.name.len);
             }
 
-            try writer.writeByte(' ');
+            // line_width already includes all icons and padding
+            line_width += max_width;
+
+            const col_width = max_width + icon_width + 2;
+
+            columns.appendAssumeCapacity(.{
+                .entries = entries,
+                .width = col_width,
+            });
+
+            if (line_width > ws.col) {
+                n_cols -= 1;
+                continue :outer;
+            }
         }
-        switch (entry.kind) {
-            .directory => try writer.writeAll(colors.dir),
-            .sym_link => try writer.writeAll(colors.symlink),
-            else => {
-                if (entry.isExecutable()) {
-                    try writer.writeAll(colors.executable);
-                }
-            },
+
+        break :outer;
+    }
+
+    if (n_cols <= 1) return printShortOnePerLine(cmd, writer);
+
+    std.log.debug("here 4", .{});
+    const n_rows = std.math.divCeil(usize, cmd.entries.len, columns.items.len) catch unreachable;
+    for (0..n_rows) |row| {
+        for (columns.items, 0..) |column, i| {
+            if (row >= column.entries.len) continue;
+            const entry = column.entries[row];
+            try printShortEntry(column.entries[row], cmd.opts, writer);
+
+            if (i < columns.items.len - 1) {
+                const spaces = column.width - (icon_width + entry.name.len);
+                try writer.writeByteNTimes(' ', spaces);
+            }
         }
-        try writer.writeAll(entry.name);
-        try writer.writeAll(colors.reset);
+        try writer.writeAll("\r\n");
+    }
+}
+
+fn isShortColumn(idx: usize, n_cols: usize, n_short_cols: usize) bool {
+    return idx + n_short_cols >= n_cols;
+}
+
+fn printShortEntry(entry: Entry, opts: Options, writer: anytype) !void {
+    const colors = opts.colors;
+    if (opts.useIcons()) {
+        const icon = Icon.get(entry, opts);
+
+        if (opts.useColor()) {
+            try writer.writeAll(icon.color);
+            try writer.writeAll(icon.icon);
+            try writer.writeAll(colors.reset);
+        } else {
+            try writer.writeAll(icon.icon);
+        }
+
+        try writer.writeByte(' ');
+    }
+    switch (entry.kind) {
+        .directory => try writer.writeAll(colors.dir),
+        .sym_link => try writer.writeAll(colors.symlink),
+        else => {
+            if (entry.isExecutable()) {
+                try writer.writeAll(colors.executable);
+            }
+        },
+    }
+    try writer.writeAll(entry.name);
+    try writer.writeAll(colors.reset);
+}
+
+fn printShortOneRow(cmd: Command, writer: anytype) !void {
+    for (cmd.entries) |entry| {
+        try printShortEntry(entry, cmd.opts, writer);
+        try writer.writeAll("  ");
+    }
+    try writer.writeAll("\r\n");
+}
+
+fn printShortOnePerLine(cmd: Command, writer: anytype) !void {
+    for (cmd.entries) |entry| {
+        try printShortEntry(entry, cmd.opts, writer);
         try writer.writeAll("\r\n");
     }
 }
@@ -793,6 +924,33 @@ const Icon = struct {
 
 fn eql(a: []const u8, b: []const u8) bool {
     return std.mem.eql(u8, a, b);
+}
+
+fn parseArgBool(arg: []const u8) ?bool {
+    if (arg.len == 0) return true;
+
+    if (std.ascii.eqlIgnoreCase(arg, "true")) return true;
+    if (std.ascii.eqlIgnoreCase(arg, "false")) return false;
+    if (std.ascii.eqlIgnoreCase(arg, "1")) return true;
+    if (std.ascii.eqlIgnoreCase(arg, "0")) return false;
+
+    return null;
+}
+
+/// getWinsize gets the window size of the output. Returns null if output is not a terminal
+fn getWinsize(fd: posix.fd_t) ?posix.winsize {
+    var winsize: posix.winsize = .{
+        .row = 0,
+        .col = 0,
+        .xpixel = 0,
+        .ypixel = 0,
+    };
+
+    const err = posix.system.ioctl(fd, posix.T.IOCGWINSZ, @intFromPtr(&winsize));
+    switch (posix.errno(err)) {
+        .SUCCESS => return winsize,
+        else => return null,
+    }
 }
 
 fn optKind(a: []const u8) enum { short, long, positional } {

@@ -7,7 +7,7 @@ const posix = std.posix;
 
 const usage =
     \\Usage: 
-    \\  els [options] [directory]
+    \\  lsr [options] [directory]
     \\
     \\  --help                           Print this message and exit
     \\

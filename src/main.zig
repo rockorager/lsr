@@ -10,6 +10,7 @@ const Options = struct {
     @"almost-all": bool = false,
     color: enum { none, auto, always } = .auto,
     @"group-directories-first": bool = true,
+    icons: bool = true,
     long: bool = false,
 
     directory: [:0]const u8 = ".",
@@ -21,20 +22,26 @@ const Options = struct {
         reset: []const u8,
         dir: []const u8,
         executable: []const u8,
-        sym_link: []const u8,
+        symlink: []const u8,
+        symlink_target: []const u8,
+        symlink_missing: []const u8,
 
         const none: Colors = .{
             .reset = "",
             .dir = "",
             .executable = "",
-            .sym_link = "",
+            .symlink = "",
+            .symlink_target = "",
+            .symlink_missing = "",
         };
 
         const default: Colors = .{
             .reset = _reset,
             .dir = bold ++ blue,
             .executable = bold ++ green,
-            .sym_link = bold ++ purple,
+            .symlink = bold ++ purple,
+            .symlink_target = bold ++ cyan,
+            .symlink_missing = bold ++ red,
         };
 
         const _reset = "\x1b[m";
@@ -192,12 +199,11 @@ pub fn main() !void {
 fn printShort(cmd: Command, writer: anytype) !void {
     const colors = cmd.opts.colors;
     for (cmd.entries) |entry| {
-        const mode = entry.modeStr();
         switch (entry.kind) {
             .directory => try writer.writeAll(colors.dir),
-            .sym_link => try writer.writeAll(colors.sym_link),
+            .sym_link => try writer.writeAll(colors.symlink),
             else => {
-                if (isExecutable(mode)) {
+                if (entry.isExecutable()) {
                     try writer.writeAll(colors.executable);
                 }
             },
@@ -272,11 +278,20 @@ fn printLong(cmd: Command, writer: anytype) !void {
             try writer.print("{d: >5} ", .{@as(u32, @intCast(time.year))});
         }
 
+        if (cmd.opts.icons and cmd.opts.isatty) {
+            const icon = Icon.get(entry);
+
+            try writer.writeAll(icon.color);
+            try writer.writeAll(icon.icon);
+            try writer.writeAll(colors.reset);
+            try writer.writeByte(' ');
+        }
+
         switch (entry.kind) {
             .directory => try writer.writeAll(colors.dir),
-            .sym_link => try writer.writeAll(colors.sym_link),
+            .sym_link => try writer.writeAll(colors.symlink),
             else => {
-                if (isExecutable(mode)) {
+                if (entry.isExecutable()) {
                     try writer.writeAll(colors.executable);
                 }
             },
@@ -286,7 +301,13 @@ fn printLong(cmd: Command, writer: anytype) !void {
 
         if (entry.kind == .sym_link) {
             try writer.writeAll(" -> ");
+            const color = if (entry.symlink_missing)
+                colors.symlink_missing
+            else
+                colors.symlink_target;
+            try writer.writeAll(color);
             try writer.writeAll(entry.link_name);
+            try writer.writeAll(colors.reset);
         }
 
         try writer.writeAll("\r\n");
@@ -352,6 +373,7 @@ const Entry = struct {
     kind: std.fs.File.Kind,
     statx: ourio.Statx,
     link_name: [:0]const u8 = "",
+    symlink_missing: bool = false,
 
     fn lessThan(opts: Options, lhs: Entry, rhs: Entry) bool {
         if (opts.@"group-directories-first" and
@@ -425,6 +447,10 @@ const Entry = struct {
             }
         }
         return std.fmt.bufPrint(out, "{d}", .{self.statx.size});
+    }
+
+    fn isExecutable(self: Entry) bool {
+        return self.statx.mode & (posix.S.IXUSR | posix.S.IXGRP | posix.S.IXOTH) != 0;
     }
 };
 
@@ -600,9 +626,116 @@ fn onCompletion(io: *ourio.Ring, task: ourio.Task) anyerror!void {
             std.mem.sort(Group, cmd.groups.items, {}, Group.lessThan);
         },
 
-        else => {},
+        .stat => {
+            if (result.statx) |_| {
+                return;
+            } else |_| {}
+
+            const entry: *Entry = @fieldParentPtr("statx", task.req.statx.result);
+            if (entry.symlink_missing) {
+                // we already got here. Just zero out the statx;
+                entry.statx = std.mem.zeroInit(ourio.Statx, entry.statx);
+                return;
+            }
+
+            entry.symlink_missing = true;
+            _ = try io.lstat(task.req.statx.path, task.req.statx.result, .{
+                .cb = onCompletion,
+                .ptr = cmd,
+                .msg = @intFromEnum(Msg.stat),
+            });
+        },
     }
 }
+
+const Icon = struct {
+    icon: []const u8,
+    color: []const u8,
+
+    // Entry types
+    const directory: Icon = .{ .icon = "󰉋", .color = Options.Colors.blue };
+    const drive: Icon = .{ .icon = "󰋊", .color = Options.Colors.blue };
+    const file: Icon = .{ .icon = "󰈤", .color = Options.Colors.fg };
+    const file_hidden: Icon = .{ .icon = "󰘓", .color = Options.Colors.fg };
+    const pipe: Icon = .{ .icon = "󰟥", .color = Options.Colors.fg };
+    const socket: Icon = .{ .icon = "󰐧", .color = Options.Colors.fg };
+    const symlink: Icon = .{ .icon = "", .color = Options.Colors.fg };
+    const symlink_dir: Icon = .{ .icon = "", .color = Options.Colors.blue };
+
+    // Broad file types
+    const executable: Icon = .{ .icon = "", .color = Options.Colors.green };
+    const image: Icon = .{ .icon = "", .color = Options.Colors.yellow };
+    const video: Icon = .{ .icon = "󰸬", .color = Options.Colors.yellow };
+
+    // Filetypes
+    const css: Icon = .{ .icon = "", .color = "\x1b[38:2:50:167:220m" };
+    const go: Icon = .{ .icon = "󰟓", .color = Options.Colors.blue };
+    const html: Icon = .{ .icon = "", .color = "\x1b[38:2:229:76:33m" };
+    const javascript: Icon = .{ .icon = "", .color = "\x1b[38:2:233:212:77m" };
+    const json: Icon = .{ .icon = "", .color = Options.Colors.blue };
+    const lua: Icon = .{ .icon = "󰢱", .color = Options.Colors.blue };
+    const markdown: Icon = .{ .icon = "", .color = "" };
+    const python: Icon = .{ .icon = "", .color = Options.Colors.yellow };
+    const typescript: Icon = .{ .icon = "", .color = Options.Colors.blue };
+    const zig: Icon = .{ .icon = "", .color = "\x1b[38:2:247:164:29m" };
+
+    const by_name: std.StaticStringMap(Icon) = .initComptime(.{});
+
+    const by_extension: std.StaticStringMap(Icon) = .initComptime(.{
+        .{ "css", Icon.css },
+        .{ "gif", Icon.image },
+        .{ "go", Icon.go },
+        .{ "html", Icon.html },
+        .{ "jpeg", Icon.image },
+        .{ "jpg", Icon.image },
+        .{ "js", Icon.javascript },
+        .{ "json", Icon.json },
+        .{ "lua", Icon.lua },
+        .{ "md", Icon.markdown },
+        .{ "mkv", Icon.video },
+        .{ "mp4", Icon.video },
+        .{ "png", Icon.image },
+        .{ "py", Icon.python },
+        .{ "ts", Icon.typescript },
+        .{ "webp", Icon.image },
+        .{ "zig", Icon.zig },
+        .{ "zon", Icon.zig },
+    });
+
+    fn get(entry: Entry) Icon {
+        // 1. By name
+        // 2. By extension
+        // 3. By type
+        if (by_name.get(entry.name)) |icon| return icon;
+
+        const ext = std.fs.path.extension(entry.name);
+        if (ext.len > 0) {
+            const ft = ext[1..];
+            if (by_extension.get(ft)) |icon| return icon;
+        }
+
+        switch (entry.kind) {
+            .block_device => return drive,
+            .character_device => return drive,
+            .directory => return directory,
+            .file => {
+                if (entry.isExecutable()) {
+                    return executable;
+                }
+                return file;
+            },
+            .named_pipe => return pipe,
+            .sym_link => {
+                if (posix.S.ISDIR(entry.statx.mode)) {
+                    return symlink_dir;
+                }
+                return symlink;
+            },
+            .unix_domain_socket => return pipe,
+            else => return file,
+        }
+    }
+};
 
 fn eql(a: []const u8, b: []const u8) bool {
     return std.mem.eql(u8, a, b);
@@ -612,8 +745,4 @@ fn optKind(a: []const u8) enum { short, long, positional } {
     if (std.mem.startsWith(u8, a, "--")) return .long;
     if (std.mem.startsWith(u8, a, "-")) return .short;
     return .positional;
-}
-
-fn isExecutable(mode: [10]u8) bool {
-    return mode[3] == 'x' or mode[6] == 'x' or mode[9] == 'x';
 }

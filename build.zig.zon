@@ -37,8 +37,8 @@
     // internet connectivity.
     .dependencies = .{
         .ourio = .{
-            .url = "git+https://github.com/rockorager/ourio#6ed0e45a772f6a7241db1663085db3f813bf3932",
-            .hash = "ourio-0.0.0-_s-z0agIAgD_Ih6DEjzDGxy5EP9K1i_xye_VacvLzgY5",
+            .url = "git+https://github.com/rockorager/ourio#1afffffe2424f9c5923271ac764e950efbdde696",
+            .hash = "ourio-0.0.0-_s-z0cALAgCdk4d-uZk0B07uX47Lf64fJDJ9L4Ejj3Rs",
         },
         .zeit = .{
             .url = "git+https://github.com/rockorager/zeit#4496d1c40b2223c22a1341e175fc2ecd94cc0de9",

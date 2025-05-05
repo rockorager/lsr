@@ -235,6 +235,19 @@ pub fn main() !void {
 fn printShort(cmd: Command, writer: anytype) !void {
     const colors = cmd.opts.colors;
     for (cmd.entries) |entry| {
+        if (cmd.opts.useIcons()) {
+            const icon = Icon.get(entry, cmd.opts);
+
+            if (cmd.opts.useColor()) {
+                try writer.writeAll(icon.color);
+                try writer.writeAll(icon.icon);
+                try writer.writeAll(colors.reset);
+            } else {
+                try writer.writeAll(icon.icon);
+            }
+
+            try writer.writeByte(' ');
+        }
         switch (entry.kind) {
             .directory => try writer.writeAll(colors.dir),
             .sym_link => try writer.writeAll(colors.symlink),
@@ -315,7 +328,7 @@ fn printLong(cmd: Command, writer: anytype) !void {
         }
 
         if (cmd.opts.useIcons()) {
-            const icon = Icon.get(entry);
+            const icon = Icon.get(entry, cmd.opts);
 
             if (cmd.opts.useColor()) {
                 try writer.writeAll(icon.color);
@@ -743,7 +756,7 @@ const Icon = struct {
         .{ "zon", Icon.zig },
     });
 
-    fn get(entry: Entry) Icon {
+    fn get(entry: Entry, opts: Options) Icon {
         // 1. By name
         // 2. By extension
         // 3. By type
@@ -767,7 +780,7 @@ const Icon = struct {
             },
             .named_pipe => return pipe,
             .sym_link => {
-                if (posix.S.ISDIR(entry.statx.mode)) {
+                if (opts.long and posix.S.ISDIR(entry.statx.mode)) {
                     return symlink_dir;
                 }
                 return symlink;

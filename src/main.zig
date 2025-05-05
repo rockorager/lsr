@@ -22,6 +22,8 @@ const usage =
     \\  -l, --long                       Display extended file metadata
 ;
 
+const queue_size = 256;
+
 const Options = struct {
     all: bool = false,
     @"almost-all": bool = false,
@@ -213,7 +215,7 @@ pub fn main() !void {
         cmd.opts.colors = .default;
     }
 
-    var ring: ourio.Ring = try .init(allocator, 256);
+    var ring: ourio.Ring = try .init(allocator, queue_size);
     defer ring.deinit();
 
     _ = try ring.open(cmd.opts.directory, .{ .DIRECTORY = true, .CLOEXEC = true }, 0, .{
@@ -242,13 +244,11 @@ pub fn main() !void {
 
     try ring.run(.until_done);
 
-    std.sort.insertion(Entry, cmd.entries, cmd.opts, Entry.lessThan);
-
     if (cmd.entries.len == 0) return;
 
-    if (cmd.opts.long)
-        try printLong(cmd, bw.writer())
-    else switch (cmd.opts.shortview) {
+    if (cmd.opts.long) {
+        try printLong(cmd, bw.writer());
+    } else switch (cmd.opts.shortview) {
         .columns => try printShortColumns(cmd, bw.writer()),
         .oneline => try printShortOnePerLine(cmd, bw.writer()),
     }
@@ -492,6 +492,7 @@ const Command = struct {
     arena: std.mem.Allocator,
     opts: Options = .{},
     entries: []Entry = &.{},
+    entry_idx: usize = 0,
 
     tz: ?zeit.TimeZone = null,
     groups: std.ArrayListUnmanaged(Group) = .empty,
@@ -542,14 +543,11 @@ const Group = struct {
     }
 };
 
-const Entry = struct {
+const MinimalEntry = struct {
     name: [:0]const u8,
     kind: std.fs.File.Kind,
-    statx: ourio.Statx,
-    link_name: [:0]const u8 = "",
-    symlink_missing: bool = false,
 
-    fn lessThan(opts: Options, lhs: Entry, rhs: Entry) bool {
+    fn lessThan(opts: Options, lhs: MinimalEntry, rhs: MinimalEntry) bool {
         if (opts.@"group-directories-first" and
             lhs.kind != rhs.kind and
             (lhs.kind == .directory or rhs.kind == .directory))
@@ -557,8 +555,16 @@ const Entry = struct {
             return lhs.kind == .directory;
         }
 
-        return std.ascii.orderIgnoreCase(lhs.name, rhs.name).compare(.lt);
+        return std.ascii.lessThanIgnoreCase(lhs.name, rhs.name);
     }
+};
+
+const Entry = struct {
+    name: [:0]const u8,
+    kind: std.fs.File.Kind,
+    statx: ourio.Statx,
+    link_name: [:0]const u8 = "",
+    symlink_missing: bool = false,
 
     fn modeStr(self: Entry) [10]u8 {
         var mode = [_]u8{'-'} ** 10;
@@ -640,22 +646,20 @@ fn onCompletion(io: *ourio.Ring, task: ourio.Task) anyerror!void {
             _ = try io.close(fd, .{});
             const dir: std.fs.Dir = .{ .fd = fd };
 
-            var results: std.ArrayListUnmanaged(Entry) = .empty;
+            var temp_results: std.ArrayListUnmanaged(MinimalEntry) = .empty;
 
             // Preallocate some memory
-            try results.ensureUnusedCapacity(cmd.arena, 64);
+            try temp_results.ensureUnusedCapacity(cmd.arena, queue_size);
 
             // zig skips "." and "..", so we manually add them if needed
             if (cmd.opts.all) {
-                results.appendAssumeCapacity(.{
+                temp_results.appendAssumeCapacity(.{
                     .name = ".",
                     .kind = .directory,
-                    .statx = undefined,
                 });
-                results.appendAssumeCapacity(.{
+                temp_results.appendAssumeCapacity(.{
                     .name = "..",
                     .kind = .directory,
-                    .statx = undefined,
                 });
             }
 
@@ -663,15 +667,32 @@ fn onCompletion(io: *ourio.Ring, task: ourio.Task) anyerror!void {
             while (try iter.next()) |dirent| {
                 if (!cmd.opts.@"almost-all" and std.mem.startsWith(u8, dirent.name, ".")) continue;
                 const nameZ = try cmd.arena.dupeZ(u8, dirent.name);
-                try results.append(cmd.arena, .{
+                try temp_results.append(cmd.arena, .{
                     .name = nameZ,
                     .kind = dirent.kind,
+                });
+            }
+
+            // sort the entries on the minimal struct. This has better memory locality since it is
+            // much smaller than bringing in the ourio.Statx struct
+            std.sort.pdq(MinimalEntry, temp_results.items, cmd.opts, MinimalEntry.lessThan);
+
+            var results: std.ArrayListUnmanaged(Entry) = .empty;
+            try results.ensureUnusedCapacity(cmd.arena, temp_results.items.len);
+            for (temp_results.items) |tmp| {
+                results.appendAssumeCapacity(.{
+                    .name = tmp.name,
+                    .kind = tmp.kind,
                     .statx = undefined,
                 });
             }
             cmd.entries = results.items;
 
-            for (cmd.entries) |*entry| {
+            for (cmd.entries, 0..) |*entry, i| {
+                if (i >= queue_size) {
+                    cmd.entry_idx = i;
+                    break;
+                }
                 const path = try std.fs.path.joinZ(
                     cmd.arena,
                     &.{ cmd.opts.directory, entry.name },
@@ -755,7 +776,7 @@ fn onCompletion(io: *ourio.Ring, task: ourio.Task) anyerror!void {
 
                 cmd.users.appendAssumeCapacity(user);
             }
-            std.mem.sort(User, cmd.users.items, {}, User.lessThan);
+            std.sort.pdq(User, cmd.users.items, {}, User.lessThan);
         },
 
         .group => {
@@ -797,23 +818,44 @@ fn onCompletion(io: *ourio.Ring, task: ourio.Task) anyerror!void {
 
                 cmd.groups.appendAssumeCapacity(group);
             }
-            std.mem.sort(Group, cmd.groups.items, {}, Group.lessThan);
+            std.sort.pdq(Group, cmd.groups.items, {}, Group.lessThan);
         },
 
         .stat => {
-            if (result.statx) |_| {
-                return;
-            } else |_| {}
+            _ = result.statx catch {
+                const entry: *Entry = @fieldParentPtr("statx", task.req.statx.result);
+                if (entry.symlink_missing) {
+                    // we already got here. Just zero out the statx;
+                    entry.statx = std.mem.zeroInit(ourio.Statx, entry.statx);
+                    return;
+                }
 
-            const entry: *Entry = @fieldParentPtr("statx", task.req.statx.result);
-            if (entry.symlink_missing) {
-                // we already got here. Just zero out the statx;
-                entry.statx = std.mem.zeroInit(ourio.Statx, entry.statx);
+                entry.symlink_missing = true;
+                _ = try io.lstat(task.req.statx.path, task.req.statx.result, .{
+                    .cb = onCompletion,
+                    .ptr = cmd,
+                    .msg = @intFromEnum(Msg.stat),
+                });
                 return;
+            };
+
+            if (cmd.entry_idx >= cmd.entries.len) return;
+
+            const entry = &cmd.entries[cmd.entry_idx];
+            cmd.entry_idx += 1;
+            const path = try std.fs.path.joinZ(
+                cmd.arena,
+                &.{ cmd.opts.directory, entry.name },
+            );
+
+            if (entry.kind == .sym_link) {
+                var buf: [std.fs.max_path_bytes]u8 = undefined;
+
+                // NOTE: Sadly, we can't do readlink via io_uring
+                const link = try posix.readlink(path, &buf);
+                entry.link_name = try cmd.arena.dupeZ(u8, link);
             }
-
-            entry.symlink_missing = true;
-            _ = try io.lstat(task.req.statx.path, task.req.statx.result, .{
+            _ = try io.stat(path, &entry.statx, .{
                 .cb = onCompletion,
                 .ptr = cmd,
                 .msg = @intFromEnum(Msg.stat),

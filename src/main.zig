@@ -5,18 +5,38 @@ const zeit = @import("zeit");
 
 const posix = std.posix;
 
+const usage =
+    \\Usage: 
+    \\  els [options] [directory]
+    \\
+    \\  --help                         Print this message and exit
+    \\
+    \\DISPLAY OPTIONS
+    \\  -a, --all                      Show files that start with a dot (ASCII 0x2E)
+    \\  -A, --almost-all               Like --all, but skips implicit "." and ".." directories
+    \\      --color=WHEN               When to use colors (always, auto, never)
+    \\      --icons=WHEN               When to display icons (always, auto, never)
+    \\  -l, --long                     Display extended file metadata
+;
+
 const Options = struct {
     all: bool = false,
     @"almost-all": bool = false,
-    color: enum { none, auto, always } = .auto,
+    color: When = .auto,
     @"group-directories-first": bool = true,
-    icons: bool = true,
+    icons: When = .auto,
     long: bool = false,
 
     directory: [:0]const u8 = ".",
 
     isatty: bool = false,
     colors: Colors = .none,
+
+    const When = enum {
+        never,
+        auto,
+        always,
+    };
 
     const Colors = struct {
         reset: []const u8,
@@ -55,9 +75,18 @@ const Options = struct {
 
         const bold = "\x1b[1m";
     };
+
     fn useColor(self: Options) bool {
         switch (self.color) {
-            .none => return false,
+            .never => return false,
+            .always => return true,
+            .auto => return self.isatty,
+        }
+    }
+
+    fn useIcons(self: Options) bool {
+        switch (self.icons) {
+            .never => return false,
             .always => return true,
             .auto => return self.isatty,
         }
@@ -129,12 +158,19 @@ pub fn main() !void {
                     else if (eql(val, "false"))
                         cmd.opts.@"group-directories-first" = false;
                 } else if (eql(opt, "color")) {
-                    if (eql(val, "always"))
-                        cmd.opts.color = .always
-                    else if (eql(val, "auto"))
-                        cmd.opts.color = .auto
-                    else if (eql(val, "none"))
-                        cmd.opts.color = .none;
+                    cmd.opts.color = std.meta.stringToEnum(Options.When, val) orelse {
+                        const w = std.io.getStdErr().writer();
+                        try w.print("Invalid color option: '{s}'", .{val});
+                        std.process.exit(1);
+                    };
+                } else if (eql(opt, "icons")) {
+                    cmd.opts.icons = std.meta.stringToEnum(Options.When, val) orelse {
+                        const w = std.io.getStdErr().writer();
+                        try w.print("Invalid color option: '{s}'", .{val});
+                        std.process.exit(1);
+                    };
+                } else if (eql(opt, "help")) {
+                    return std.io.getStdErr().writeAll(usage);
                 } else {
                     const w = std.io.getStdErr().writer();
                     try w.print("Invalid opt: '{s}'", .{opt});
@@ -278,12 +314,17 @@ fn printLong(cmd: Command, writer: anytype) !void {
             try writer.print("{d: >5} ", .{@as(u32, @intCast(time.year))});
         }
 
-        if (cmd.opts.icons and cmd.opts.isatty) {
+        if (cmd.opts.useIcons()) {
             const icon = Icon.get(entry);
 
-            try writer.writeAll(icon.color);
-            try writer.writeAll(icon.icon);
-            try writer.writeAll(colors.reset);
+            if (cmd.opts.useColor()) {
+                try writer.writeAll(icon.color);
+                try writer.writeAll(icon.icon);
+                try writer.writeAll(colors.reset);
+            } else {
+                try writer.writeAll(icon.icon);
+            }
+
             try writer.writeByte(' ');
         }
 
@@ -487,7 +528,7 @@ fn onCompletion(io: *ourio.Ring, task: ourio.Task) anyerror!void {
 
             var iter = dir.iterate();
             while (try iter.next()) |dirent| {
-                if (!cmd.opts.all and std.mem.startsWith(u8, dirent.name, ".")) continue;
+                if (!cmd.opts.@"almost-all" and std.mem.startsWith(u8, dirent.name, ".")) continue;
                 const nameZ = try cmd.arena.dupeZ(u8, dirent.name);
                 try results.append(cmd.arena, .{
                     .name = nameZ,

@@ -402,7 +402,7 @@ fn printLong(cmd: Command, writer: anytype) !void {
         var n_suff: usize = 0;
         for (cmd.entries) |entry| {
             const group = cmd.getGroup(entry.statx.gid).?;
-            const user = cmd.getGroup(entry.statx.uid).?;
+            const user = cmd.getUser(entry.statx.uid).?;
             var buf: [16]u8 = undefined;
             const size = try entry.humanReadableSize(&buf);
             n_group = @max(n_group, group.name.len);

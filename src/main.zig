@@ -202,7 +202,7 @@ pub fn main() !void {
                 } else if (eql(opt, "help")) {
                     return stderr.writeAll(usage);
                 } else if (eql(opt, "version")) {
-                    try bw.writer().print("lsr {s}", .{build_options.version});
+                    try bw.writer().print("lsr {s}\r\n", .{build_options.version});
                     try bw.flush();
                     return;
                 } else {

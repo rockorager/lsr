@@ -2,6 +2,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 const ourio = @import("ourio");
 const zeit = @import("zeit");
+const build_options = @import("build_options");
 
 const posix = std.posix;
 
@@ -200,6 +201,10 @@ pub fn main() !void {
                     cmd.opts.shortview = if (o) .oneline else .columns;
                 } else if (eql(opt, "help")) {
                     return stderr.writeAll(usage);
+                } else if (eql(opt, "version")) {
+                    try bw.writer().print("lsr {s}", .{build_options.version});
+                    try bw.flush();
+                    return;
                 } else {
                     try stderr.print("Invalid opt: '{s}'", .{opt});
                     std.process.exit(1);

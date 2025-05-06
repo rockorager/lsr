@@ -1,4 +1,5 @@
 const std = @import("std");
+const zzdoc = @import("zzdoc");
 
 /// Must be kept in sync with git tags
 const version: std.SemanticVersion = .{ .major = 0, .minor = 1, .patch = 0 };
@@ -6,6 +7,16 @@ const version: std.SemanticVersion = .{ .major = 0, .minor = 1, .patch = 0 };
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
+
+    // manpages
+    {
+        var man_step = zzdoc.addManpageStep(b, .{
+            .root_doc_dir = b.path("docs/"),
+        });
+
+        const install_step = man_step.addInstallStep(.{});
+        b.default_step.dependOn(&install_step.step);
+    }
 
     const exe_mod = b.createModule(.{
         .root_source_file = b.path("src/main.zig"),

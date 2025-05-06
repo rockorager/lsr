@@ -11,6 +11,7 @@ const usage =
     \\  lsr [options] [directory]
     \\
     \\  --help                           Print this message and exit
+    \\  --version                        Print the version string
     \\
     \\DISPLAY OPTIONS
     \\  -1, --oneline                    Print entries one per line

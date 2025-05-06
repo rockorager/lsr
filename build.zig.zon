@@ -14,6 +14,10 @@
             .url = "git+https://github.com/rockorager/zeit#4496d1c40b2223c22a1341e175fc2ecd94cc0de9",
             .hash = "zeit-0.6.0-5I6bk1J1AgA13rteb6E0steXiOUKBYTzJZMMIuK9oEmb",
         },
+        .zzdoc = .{
+            .url = "git+https://github.com/rockorager/zzdoc#57e86eb4e621bc4a96fbe0dd89ad0986db6d0483",
+            .hash = "zzdoc-0.0.0-tzT1PuPZAACr1jIJxjTrdOsLbfXS6idWFGfTq0gwxJiv",
+        },
     },
     .paths = .{
         "build.zig",

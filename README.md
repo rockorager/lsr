@@ -4,6 +4,18 @@
 
 ![screenshot](screenshot.png)
 
+## Installation
+
+`lsr` uses the zig build system. To install, you will need zig 0.14.0. To
+install for the local user (assuming $HOME/.local/bin is in $PATH), run:
+
+```sh
+zig build -Doptimize=ReleaseSmall --prefix $HOME/.local
+```
+
+which will install `lsr` and the associated manpage appropriately. Replace
+`$HOME/.local` with your preferred installation directory.
+
 ## Benchmarks
 
 Benchmarks were all gathered on the same set of directories, using the latest

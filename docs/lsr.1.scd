@@ -34,7 +34,7 @@ batching.
 	When to use colors (always, auto, never)
 
 *--help*
-	Print the version and exit.
+	Print the help menu and exit
 
 *--icons=WHEN*
 	When to display icons (always, auto, never)
@@ -43,7 +43,7 @@ batching.
 	Display extended file metadata
 
 *--version*
-	Print the version and exit.
+	Print the version and exit
 
 # AUTHORS
 

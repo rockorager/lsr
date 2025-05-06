@@ -7,7 +7,9 @@
 ## Benchmarks
 
 Benchmarks were all gathered on the same set of directories, using the latest
-releases of each program (versions are shown below).
+releases of each program (versions are shown below). All benchmarks run on Linux
+(because io_uring). `lsr` does work on macOS/BSD as well, but will not see the
+syscall batching benefits that are available with io_uring.
 
 | Program | Version |
 |:-------:|:-------:|

@@ -21,6 +21,7 @@ const usage =
     \\      --group-directories-first    When to use colors (always, auto, never)
     \\      --icons=WHEN                 When to display icons (always, auto, never)
     \\  -l, --long                       Display extended file metadata
+    \\
 ;
 
 const queue_size = 256;

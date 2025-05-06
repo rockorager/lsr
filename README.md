@@ -31,7 +31,7 @@ Data gathered with `hyperfine` on a directory of `n` plain files.
 
 ### Syscalls
 
-Data gathered with `strace -c` on a directory of `n` plain files.
+Data gathered with `strace -c` on a directory of `n` plain files. (Lower is better)
 
 |    Program    | n=10 | n=100 | n=1,000 | n=10,000 |
 |:-------------:|:----:|:-----:|:-------:|:--------:|

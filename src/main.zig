@@ -603,7 +603,10 @@ const Entry = struct {
     fn modeStr(self: Entry) [10]u8 {
         var mode = [_]u8{'-'} ** 10;
         switch (self.kind) {
+            .block_device => mode[0] = 'b',
+            .character_device => mode[0] = 'c',
             .directory => mode[0] = 'd',
+            .named_pipe => mode[0] = 'p',
             .sym_link => mode[0] = 'l',
             else => {},
         }

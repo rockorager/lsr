@@ -898,12 +898,14 @@ const Icon = struct {
     const lua: Icon = .{ .icon = "󰢱", .color = Options.Colors.blue };
     const markdown: Icon = .{ .icon = "", .color = "" };
     const python: Icon = .{ .icon = "", .color = Options.Colors.yellow };
+    const rust: Icon = .{ .icon = "", .color = "" };
     const typescript: Icon = .{ .icon = "", .color = Options.Colors.blue };
     const zig: Icon = .{ .icon = "", .color = "\x1b[38:2:247:164:29m" };
 
     const by_name: std.StaticStringMap(Icon) = .initComptime(.{});
 
     const by_extension: std.StaticStringMap(Icon) = .initComptime(.{
+        .{ "cjs", Icon.javascript },
         .{ "css", Icon.css },
         .{ "gif", Icon.image },
         .{ "go", Icon.go },
@@ -911,14 +913,18 @@ const Icon = struct {
         .{ "jpeg", Icon.image },
         .{ "jpg", Icon.image },
         .{ "js", Icon.javascript },
+        .{ "jsx", Icon.javascript },
         .{ "json", Icon.json },
         .{ "lua", Icon.lua },
         .{ "md", Icon.markdown },
+        .{ "mjs", Icon.javascript },
         .{ "mkv", Icon.video },
         .{ "mp4", Icon.video },
         .{ "png", Icon.image },
         .{ "py", Icon.python },
+        .{ "rs", Icon.rust },
         .{ "ts", Icon.typescript },
+        .{ "tsx", Icon.typescript },
         .{ "webp", Icon.image },
         .{ "zig", Icon.zig },
         .{ "zon", Icon.zig },

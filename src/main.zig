@@ -401,26 +401,31 @@ fn printLong(cmd: Command, writer: anytype) !void {
         var n_size: usize = 0;
         var n_suff: usize = 0;
         for (cmd.entries) |entry| {
-            const group = cmd.getGroup(entry.statx.gid) orelse switch (entry.statx.gid) {
-                0...9 => "1",
-                10...99 => "10",
-                100...999 => "100",
-                1000...9999 => "1000",
-                10000...99999 => "10000",
-                else => "1000000",
-            };
-            const user = cmd.getUser(entry.statx.uid) orelse switch (entry.statx.uid) {
-                0...9 => "1",
-                10...99 => "10",
-                100...999 => "100",
-                1000...9999 => "1000",
-                10000...99999 => "10000",
-                else => "1000000",
-            };
+            const group = cmd.getGroup(entry.statx.gid);
+            const user = cmd.getUser(entry.statx.uid);
+
             var buf: [16]u8 = undefined;
             const size = try entry.humanReadableSize(&buf);
-            n_group = @max(n_group, group.name.len);
-            n_user = @max(n_user, user.name.len);
+            const group_len: usize = if (group) |g| g.name.len else switch (entry.statx.gid) {
+                0...9 => 1,
+                10...99 => 2,
+                100...999 => 3,
+                1000...9999 => 4,
+                10000...99999 => 5,
+                else => 6,
+            };
+
+            const user_len: usize = if (user) |u| u.name.len else switch (entry.statx.uid) {
+                0...9 => 1,
+                10...99 => 2,
+                100...999 => 3,
+                1000...9999 => 4,
+                10000...99999 => 5,
+                else => 6,
+            };
+
+            n_group = @max(n_group, group_len);
+            n_user = @max(n_user, user_len);
             n_size = @max(n_size, size.len);
             n_suff = @max(n_suff, entry.humanReadableSuffix().len);
         }
@@ -428,10 +433,16 @@ fn printLong(cmd: Command, writer: anytype) !void {
     };
 
     for (cmd.entries) |entry| {
-        const user = cmd.getUser(entry.statx.uid) orelse
-            try std.fmt.allocPrint(cmd.arena, "{d}", .{entry.statx.uid});
-        const group = cmd.getGroup(entry.statx.gid) orelse
-            try std.fmt.allocPrint(cmd.arena, "{d}", .{entry.statx.gid});
+        const user: User = cmd.getUser(entry.statx.uid) orelse
+            .{
+                .uid = entry.statx.uid,
+                .name = try std.fmt.allocPrint(cmd.arena, "{d}", .{entry.statx.uid}),
+            };
+        const group: Group = cmd.getGroup(entry.statx.gid) orelse
+            .{
+                .gid = entry.statx.gid,
+                .name = try std.fmt.allocPrint(cmd.arena, "{d}", .{entry.statx.gid}),
+            };
         const ts = @as(i128, entry.statx.mtime.sec) * std.time.ns_per_s;
         const inst: zeit.Instant = .{ .timestamp = ts, .timezone = &tz };
         const time = inst.time();

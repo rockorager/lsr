@@ -33,6 +33,7 @@ const Options = struct {
     color: When = .auto,
     shortview: enum { columns, oneline } = .oneline,
     @"group-directories-first": bool = true,
+    hyperlinks: When = .auto,
     icons: When = .auto,
     long: bool = false,
 
@@ -95,6 +96,14 @@ const Options = struct {
 
     fn useIcons(self: Options) bool {
         switch (self.icons) {
+            .never => return false,
+            .always => return true,
+            .auto => return self.isatty(),
+        }
+    }
+
+    fn useHyperlinks(self: Options) bool {
+        switch (self.hyperlinks) {
             .never => return false,
             .always => return true,
             .auto => return self.isatty(),
@@ -182,6 +191,11 @@ pub fn main() !void {
                 } else if (eql(opt, "color")) {
                     cmd.opts.color = std.meta.stringToEnum(Options.When, val) orelse {
                         try stderr.print("Invalid color option: '{s}'", .{val});
+                        std.process.exit(1);
+                    };
+                } else if (eql(opt, "hyperlinks")) {
+                    cmd.opts.hyperlinks = std.meta.stringToEnum(Options.When, val) orelse {
+                        try stderr.print("Invalid hyperlinks option: '{s}'", .{val});
                         std.process.exit(1);
                     };
                 } else if (eql(opt, "icons")) {
@@ -332,7 +346,7 @@ fn printShortColumns(cmd: Command, writer: anytype) !void {
         for (columns.items, 0..) |column, i| {
             if (row >= column.entries.len) continue;
             const entry = column.entries[row];
-            try printShortEntry(column.entries[row], cmd.opts, writer);
+            try printShortEntry(column.entries[row], cmd, writer);
 
             if (i < columns.items.len - 1) {
                 const spaces = column.width - (icon_width + entry.name.len);
@@ -347,7 +361,8 @@ fn isShortColumn(idx: usize, n_cols: usize, n_short_cols: usize) bool {
     return idx + n_short_cols >= n_cols;
 }
 
-fn printShortEntry(entry: Entry, opts: Options, writer: anytype) !void {
+fn printShortEntry(entry: Entry, cmd: Command, writer: anytype) !void {
+    const opts = cmd.opts;
     const colors = opts.colors;
     if (opts.useIcons()) {
         const icon = Icon.get(entry, opts);
@@ -371,8 +386,17 @@ fn printShortEntry(entry: Entry, opts: Options, writer: anytype) !void {
             }
         },
     }
-    try writer.writeAll(entry.name);
-    try writer.writeAll(colors.reset);
+
+    if (opts.useHyperlinks()) {
+        const path = try std.fs.path.join(cmd.arena, &.{ opts.directory, entry.name });
+        try writer.print("\x1b]8;;file://{s}\x1b\\", .{path});
+        try writer.writeAll(entry.name);
+        try writer.writeAll("\x1b]8;;\x1b\\");
+        try writer.writeAll(colors.reset);
+    } else {
+        try writer.writeAll(entry.name);
+        try writer.writeAll(colors.reset);
+    }
 }
 
 fn printShortOneRow(cmd: Command, writer: anytype) !void {
@@ -385,7 +409,7 @@ fn printShortOneRow(cmd: Command, writer: anytype) !void {
 
 fn printShortOnePerLine(cmd: Command, writer: anytype) !void {
     for (cmd.entries) |entry| {
-        try printShortEntry(entry, cmd.opts, writer);
+        try printShortEntry(entry, cmd, writer);
         try writer.writeAll("\r\n");
     }
 }
@@ -504,7 +528,15 @@ fn printLong(cmd: Command, writer: anytype) !void {
                 }
             },
         }
-        try writer.writeAll(entry.name);
+
+        if (cmd.opts.useHyperlinks()) {
+            const path = try std.fs.path.join(cmd.arena, &.{ cmd.opts.directory, entry.name });
+            try writer.print("\x1b]8;;file://{s}\x1b\\", .{path});
+            try writer.writeAll(entry.name);
+            try writer.writeAll("\x1b]8;;\x1b\\");
+        } else {
+            try writer.writeAll(entry.name);
+        }
         try writer.writeAll(colors.reset);
 
         if (entry.kind == .sym_link) {
@@ -513,8 +545,15 @@ fn printLong(cmd: Command, writer: anytype) !void {
                 colors.symlink_missing
             else
                 colors.symlink_target;
+
             try writer.writeAll(color);
-            try writer.writeAll(entry.link_name);
+            if (cmd.opts.useHyperlinks()) {
+                try writer.print("\x1b]8;;file://{s}\x1b\\", .{entry.link_name});
+                try writer.writeAll(entry.link_name);
+                try writer.writeAll("\x1b]8;;\x1b\\");
+            } else {
+                try writer.writeAll(entry.link_name);
+            }
             try writer.writeAll(colors.reset);
         }
 
@@ -682,6 +721,12 @@ fn onCompletion(io: *ourio.Ring, task: ourio.Task) anyerror!void {
             // we are async, no need to defer!
             _ = try io.close(fd, .{});
             const dir: std.fs.Dir = .{ .fd = fd };
+
+            if (cmd.opts.useHyperlinks()) {
+                var buf: [std.fs.max_path_bytes]u8 = undefined;
+                const cwd = try std.os.getFdPath(fd, &buf);
+                cmd.opts.directory = try cmd.arena.dupeZ(u8, cwd);
+            }
 
             var temp_results: std.ArrayListUnmanaged(MinimalEntry) = .empty;
 

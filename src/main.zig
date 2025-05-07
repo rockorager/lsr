@@ -19,7 +19,7 @@ const usage =
     \\  -A, --almost-all                 Like --all, but skips implicit "." and ".." directories
     \\  -C, --columns                    Print the output in columns
     \\      --color=WHEN                 When to use colors (always, auto, never)
-    \\      --group-directories-first    When to use colors (always, auto, never)
+    \\      --group-directories-first    Print all directories before printing regular files
     \\      --hyperlinks=WHEN            When to use OSC 8 hyperlinks (always, auto, never)
     \\      --icons=WHEN                 When to display icons (always, auto, never)
     \\  -l, --long                       Display extended file metadata

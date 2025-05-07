@@ -981,7 +981,9 @@ const Icon = struct {
     const zig: Icon = .{ .icon = "", .color = "\x1b[38:2:247:164:29m" };
 
     const by_name: std.StaticStringMap(Icon) = .initComptime(.{
-        .{"flake.lock", Icon.nix},
+        .{ "flake.lock", Icon.nix },
+        .{ "go.mod", Icon.go },
+        .{ "go.sum", Icon.go },
     });
 
     const by_extension: std.StaticStringMap(Icon) = .initComptime(.{

@@ -31,6 +31,7 @@ DISPLAY OPTIONS
   -C, --columns                    Print the output in columns
       --color=WHEN                 When to use colors (always, auto, never)
       --group-directories-first    When to use colors (always, auto, never)
+      --hyperlinks=WHEN            When to use OSC 8 hyperlinks (always, auto, never)
       --icons=WHEN                 When to display icons (always, auto, never)
   -l, --long                       Display extended file metadata
 

@@ -82,6 +82,8 @@ fn genVersion(b: *std.Build) ![]const u8 {
         "-C",
         b.build_root.path orelse ".",
         "describe",
+        "--match",
+        "*.*.*",
         "--tags",
         "--abbrev=9",
     }, &code, .Ignore) catch {

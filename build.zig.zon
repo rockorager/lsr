@@ -1,14 +1,14 @@
 .{
     .name = .lsr,
-    .version = "0.1.0",
+    .version = "0.2.0",
     .fingerprint = 0x495d173f6002e86, // Changing this has security and trust implications.
 
     .minimum_zig_version = "0.14.0",
 
     .dependencies = .{
         .ourio = .{
-            .url = "git+https://github.com/rockorager/ourio#1afffffe2424f9c5923271ac764e950efbdde696",
-            .hash = "ourio-0.0.0-_s-z0cALAgCdk4d-uZk0B07uX47Lf64fJDJ9L4Ejj3Rs",
+            .url = "git+https://github.com/rockorager/ourio#54c1a1ed8d0994636770e5185ecdb59fe6d8535e",
+            .hash = "ourio-0.0.0-_s-z0asOAgAhpi7gSpLLvWGj_4XURez4W9TWN6SGs5BP",
         },
         .zeit = .{
             .url = "git+https://github.com/rockorager/zeit#4496d1c40b2223c22a1341e175fc2ecd94cc0de9",

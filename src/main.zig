@@ -974,16 +974,20 @@ const Icon = struct {
     const json: Icon = .{ .icon = "", .color = Options.Colors.blue };
     const lua: Icon = .{ .icon = "󰢱", .color = Options.Colors.blue };
     const markdown: Icon = .{ .icon = "", .color = "" };
+    const nix: Icon = .{ .icon = "󱄅", .color = "\x1b[38:2:127:185:228m" };
     const python: Icon = .{ .icon = "", .color = Options.Colors.yellow };
     const rust: Icon = .{ .icon = "", .color = "" };
     const typescript: Icon = .{ .icon = "", .color = Options.Colors.blue };
     const zig: Icon = .{ .icon = "", .color = "\x1b[38:2:247:164:29m" };
 
-    const by_name: std.StaticStringMap(Icon) = .initComptime(.{});
+    const by_name: std.StaticStringMap(Icon) = .initComptime(.{
+        .{"flake.lock", Icon.nix},
+    });
 
     const by_extension: std.StaticStringMap(Icon) = .initComptime(.{
         .{ "cjs", Icon.javascript },
         .{ "css", Icon.css },
+        .{ "drv", Icon.nix },
         .{ "gif", Icon.image },
         .{ "go", Icon.go },
         .{ "html", Icon.html },
@@ -997,6 +1001,8 @@ const Icon = struct {
         .{ "mjs", Icon.javascript },
         .{ "mkv", Icon.video },
         .{ "mp4", Icon.video },
+        .{ "nar", Icon.nix },
+        .{ "nix", Icon.nix },
         .{ "png", Icon.image },
         .{ "py", Icon.python },
         .{ "rs", Icon.rust },

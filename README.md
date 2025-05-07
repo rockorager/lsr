@@ -16,6 +16,26 @@ zig build -Doptimize=ReleaseSmall --prefix $HOME/.local
 which will install `lsr` and the associated manpage appropriately. Replace
 `$HOME/.local` with your preferred installation directory.
 
+## Usage
+
+```
+lsr [options] [directory]
+
+  --help                           Print this message and exit
+  --version                        Print the version string
+
+DISPLAY OPTIONS
+  -1, --oneline                    Print entries one per line
+  -a, --all                        Show files that start with a dot (ASCII 0x2E)
+  -A, --almost-all                 Like --all, but skips implicit "." and ".." directories
+  -C, --columns                    Print the output in columns
+      --color=WHEN                 When to use colors (always, auto, never)
+      --group-directories-first    When to use colors (always, auto, never)
+      --icons=WHEN                 When to display icons (always, auto, never)
+  -l, --long                       Display extended file metadata
+
+```
+
 ## Benchmarks
 
 Benchmarks were all gathered on the same set of directories, using the latest

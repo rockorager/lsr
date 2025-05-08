@@ -544,22 +544,29 @@ fn printLong(cmd: Command, writer: anytype) !void {
         }
         try writer.writeAll(colors.reset);
 
-        if (entry.kind == .sym_link) {
-            try writer.writeAll(" -> ");
-            const color = if (entry.symlink_missing)
-                colors.symlink_missing
-            else
-                colors.symlink_target;
+        switch (entry.kind) {
+            .sym_link => {
+                try writer.writeAll(" -> ");
 
-            try writer.writeAll(color);
-            if (cmd.opts.useHyperlinks()) {
-                try writer.print("\x1b]8;;file://{s}\x1b\\", .{entry.link_name});
-                try writer.writeAll(entry.link_name);
-                try writer.writeAll("\x1b]8;;\x1b\\");
-            } else {
-                try writer.writeAll(entry.link_name);
-            }
-            try writer.writeAll(colors.reset);
+                const symlink: Symlink = cmd.symlinks.get(entry.name) orelse .{
+                    .name = "[missing]",
+                    .exists = false,
+                };
+
+                const color = if (symlink.exists) colors.symlink_target else colors.symlink_missing;
+
+                try writer.writeAll(color);
+                if (cmd.opts.useHyperlinks() and symlink.exists) {
+                    try writer.print("\x1b]8;;file://{s}\x1b\\", .{symlink.name});
+                    try writer.writeAll(symlink.name);
+                    try writer.writeAll("\x1b]8;;\x1b\\");
+                } else {
+                    try writer.writeAll(symlink.name);
+                }
+                try writer.writeAll(colors.reset);
+            },
+
+            else => {},
         }
 
         try writer.writeAll("\r\n");
@@ -571,6 +578,7 @@ const Command = struct {
     opts: Options = .{},
     entries: []Entry = &.{},
     entry_idx: usize = 0,
+    symlinks: std.StringHashMapUnmanaged(Symlink) = .empty,
 
     tz: ?zeit.TimeZone = null,
     groups: std.ArrayListUnmanaged(Group) = .empty,
@@ -637,12 +645,26 @@ const MinimalEntry = struct {
     }
 };
 
+const Symlink = struct {
+    name: [:0]const u8,
+    exists: bool = true,
+};
+
 const Entry = struct {
     name: [:0]const u8,
     kind: std.fs.File.Kind,
     statx: ourio.Statx,
-    link_name: [:0]const u8 = "",
-    symlink_missing: bool = false,
+
+    fn lessThan(opts: Options, lhs: Entry, rhs: Entry) bool {
+        if (opts.@"group-directories-first" and
+            lhs.kind != rhs.kind and
+            (lhs.kind == .directory or rhs.kind == .directory))
+        {
+            return lhs.kind == .directory;
+        }
+
+        return std.ascii.lessThanIgnoreCase(lhs.name, rhs.name);
+    }
 
     fn modeStr(self: Entry) [10]u8 {
         var mode = [_]u8{'-'} ** 10;
@@ -790,7 +812,8 @@ fn onCompletion(io: *ourio.Ring, task: ourio.Task) anyerror!void {
 
                     // NOTE: Sadly, we can't do readlink via io_uring
                     const link = try posix.readlink(path, &buf);
-                    entry.link_name = try cmd.arena.dupeZ(u8, link);
+                    const symlink: Symlink = .{ .name = try cmd.arena.dupeZ(u8, link) };
+                    try cmd.symlinks.put(cmd.arena, entry.name, symlink);
                 }
                 _ = try io.stat(path, &entry.statx, .{
                     .cb = onCompletion,
@@ -909,15 +932,19 @@ fn onCompletion(io: *ourio.Ring, task: ourio.Task) anyerror!void {
         },
 
         .stat => {
-            _ = result.statx catch {
+            _ = result.statx catch |err| {
                 const entry: *Entry = @fieldParentPtr("statx", task.req.statx.result);
-                if (entry.symlink_missing) {
-                    // we already got here. Just zero out the statx;
+                const symlink = cmd.symlinks.getPtr(entry.name) orelse return err;
+
+                if (!symlink.exists) {
+                    // We already lstated this and found an error. Just zero out statx and move
+                    // along
                     entry.statx = std.mem.zeroInit(ourio.Statx, entry.statx);
                     return;
                 }
 
-                entry.symlink_missing = true;
+                symlink.exists = false;
+
                 _ = try io.lstat(task.req.statx.path, task.req.statx.result, .{
                     .cb = onCompletion,
                     .ptr = cmd,
@@ -940,7 +967,8 @@ fn onCompletion(io: *ourio.Ring, task: ourio.Task) anyerror!void {
 
                 // NOTE: Sadly, we can't do readlink via io_uring
                 const link = try posix.readlink(path, &buf);
-                entry.link_name = try cmd.arena.dupeZ(u8, link);
+                const symlink: Symlink = .{ .name = try cmd.arena.dupeZ(u8, link) };
+                try cmd.symlinks.put(cmd.arena, entry.name, symlink);
             }
             _ = try io.stat(path, &entry.statx, .{
                 .cb = onCompletion,

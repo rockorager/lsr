@@ -111,6 +111,10 @@ const Options = struct {
         }
     }
 
+    fn showDotfiles(self: Options) bool {
+        return self.@"almost-all" or self.all;
+    }
+
     fn isatty(self: Options) bool {
         return self.winsize != null;
     }
@@ -748,7 +752,7 @@ fn onCompletion(io: *ourio.Ring, task: ourio.Task) anyerror!void {
 
             var iter = dir.iterate();
             while (try iter.next()) |dirent| {
-                if (!cmd.opts.@"almost-all" and std.mem.startsWith(u8, dirent.name, ".")) continue;
+                if (!cmd.opts.showDotfiles() and std.mem.startsWith(u8, dirent.name, ".")) continue;
                 const nameZ = try cmd.arena.dupeZ(u8, dirent.name);
                 try temp_results.append(cmd.arena, .{
                     .name = nameZ,

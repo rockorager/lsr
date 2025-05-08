@@ -23,6 +23,7 @@ const usage =
     \\      --hyperlinks=WHEN            When to use OSC 8 hyperlinks (always, auto, never)
     \\      --icons=WHEN                 When to display icons (always, auto, never)
     \\  -l, --long                       Display extended file metadata
+    \\  -r, --reverse                    Reverse the sort order
     \\  -t, --time                       Sort the entries by modification time, most recent first
     \\
 ;
@@ -39,6 +40,7 @@ const Options = struct {
     icons: When = .auto,
     long: bool = false,
     sort_by_mod_time: bool = false,
+    reverse_sort: bool = false,
 
     directory: [:0]const u8 = ".",
 
@@ -164,6 +166,7 @@ pub fn main() !void {
                         'C' => cmd.opts.shortview = .columns,
                         'a' => cmd.opts.all = true,
                         'l' => cmd.opts.long = true,
+                        'r' => cmd.opts.reverse_sort = true,
                         't' => cmd.opts.sort_by_mod_time = true,
                         else => {
                             try stderr.print("Invalid opt: '{c}'", .{b});
@@ -228,6 +231,11 @@ pub fn main() !void {
                         try stderr.print("Invalid boolean: '{s}'", .{val});
                         std.process.exit(1);
                     };
+                } else if (eql(opt, "reverse")) {
+                    cmd.opts.reverse_sort = parseArgBool(val) orelse {
+                        try stderr.print("Invalid boolean: '{s}'", .{val});
+                        std.process.exit(1);
+                    };
                 } else if (eql(opt, "help")) {
                     return stderr.writeAll(usage);
                 } else if (eql(opt, "version")) {
@@ -282,6 +290,10 @@ pub fn main() !void {
 
     if (cmd.opts.sort_by_mod_time) {
         std.sort.pdq(Entry, cmd.entries, cmd.opts, Entry.lessThan);
+    }
+
+    if (cmd.opts.reverse_sort) {
+        std.mem.reverse(Entry, cmd.entries);
     }
 
     if (cmd.opts.long) {

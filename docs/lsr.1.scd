@@ -45,6 +45,9 @@ batching.
 *-l*, *--long*
 	Display extended file metadata
 
+*-r*, *--reverse*
+	Reverse the sort order
+
 *-t*, *--time*
 	Sort the entries by modification time, most recent first
 

@@ -34,6 +34,7 @@ DISPLAY OPTIONS
       --hyperlinks=WHEN            When to use OSC 8 hyperlinks (always, auto, never)
       --icons=WHEN                 When to display icons (always, auto, never)
   -l, --long                       Display extended file metadata
+  -t, --time                       Sort the entries by modification time, most recent first
 
 ```
 

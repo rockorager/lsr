@@ -45,6 +45,9 @@ batching.
 *-l*, *--long*
 	Display extended file metadata
 
+*-t*, *--time*
+	Sort the entries by modification time, most recent first
+
 *--version*
 	Print the version and exit
 

@@ -23,6 +23,7 @@ const usage =
     \\      --hyperlinks=WHEN            When to use OSC 8 hyperlinks (always, auto, never)
     \\      --icons=WHEN                 When to display icons (always, auto, never)
     \\  -l, --long                       Display extended file metadata
+    \\  -t, --time                       Sort the entries by modification time, most recent first
     \\
 ;
 
@@ -37,6 +38,7 @@ const Options = struct {
     hyperlinks: When = .auto,
     icons: When = .auto,
     long: bool = false,
+    sort_by_mod_time: bool = false,
 
     directory: [:0]const u8 = ".",
 
@@ -162,6 +164,7 @@ pub fn main() !void {
                         'C' => cmd.opts.shortview = .columns,
                         'a' => cmd.opts.all = true,
                         'l' => cmd.opts.long = true,
+                        't' => cmd.opts.sort_by_mod_time = true,
                         else => {
                             try stderr.print("Invalid opt: '{c}'", .{b});
                             std.process.exit(1);
@@ -220,6 +223,11 @@ pub fn main() !void {
                         std.process.exit(1);
                     };
                     cmd.opts.shortview = if (o) .oneline else .columns;
+                } else if (eql(opt, "time")) {
+                    cmd.opts.sort_by_mod_time = parseArgBool(val) orelse {
+                        try stderr.print("Invalid boolean: '{s}'", .{val});
+                        std.process.exit(1);
+                    };
                 } else if (eql(opt, "help")) {
                     return stderr.writeAll(usage);
                 } else if (eql(opt, "version")) {
@@ -271,6 +279,10 @@ pub fn main() !void {
     try ring.run(.until_done);
 
     if (cmd.entries.len == 0) return;
+
+    if (cmd.opts.sort_by_mod_time) {
+        std.sort.pdq(Entry, cmd.entries, cmd.opts, Entry.lessThan);
+    }
 
     if (cmd.opts.long) {
         try printLong(cmd, bw.writer());
@@ -661,6 +673,13 @@ const Entry = struct {
             (lhs.kind == .directory or rhs.kind == .directory))
         {
             return lhs.kind == .directory;
+        }
+
+        if (opts.sort_by_mod_time) {
+            if (lhs.statx.mtime.sec == rhs.statx.mtime.sec) {
+                return lhs.statx.mtime.nsec > rhs.statx.mtime.nsec;
+            }
+            return lhs.statx.mtime.sec > rhs.statx.mtime.sec;
         }
 
         return std.ascii.lessThanIgnoreCase(lhs.name, rhs.name);

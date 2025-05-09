@@ -636,7 +636,7 @@ const Msg = enum(u16) {
 };
 
 const User = struct {
-    uid: posix.uid_t,
+    uid: if (builtin.os.tag == .macos) i33 else posix.uid_t,
     name: []const u8,
 
     fn lessThan(_: void, lhs: User, rhs: User) bool {
@@ -645,7 +645,7 @@ const User = struct {
 };
 
 const Group = struct {
-    gid: posix.gid_t,
+    gid: if (builtin.os.tag == .macos) i33 else posix.gid_t,
     name: []const u8,
 
     fn lessThan(_: void, lhs: Group, rhs: Group) bool {
@@ -905,6 +905,8 @@ fn onCompletion(io: *ourio.Ring, task: ourio.Task) anyerror!void {
             // <name>:<throwaway>:<uid><...garbage>
             while (lines.next()) |line| {
                 if (line.len == 0) continue;
+                if (std.mem.startsWith(u8, line, "#")) continue;
+
                 var iter = std.mem.splitScalar(u8, line, ':');
                 const name = iter.first();
                 _ = iter.next();
@@ -912,7 +914,11 @@ fn onCompletion(io: *ourio.Ring, task: ourio.Task) anyerror!void {
 
                 const user: User = .{
                     .name = name,
-                    .uid = try std.fmt.parseInt(u32, uid, 10),
+                    .uid = try std.fmt.parseInt(
+                        if (builtin.os.tag == .macos) i33 else u32,
+                        uid,
+                        10,
+                    ),
                 };
 
                 cmd.users.appendAssumeCapacity(user);
@@ -947,6 +953,8 @@ fn onCompletion(io: *ourio.Ring, task: ourio.Task) anyerror!void {
             // <name>:<throwaway>:<uid><...garbage>
             while (lines.next()) |line| {
                 if (line.len == 0) continue;
+                if (std.mem.startsWith(u8, line, "#")) continue;
+
                 var iter = std.mem.splitScalar(u8, line, ':');
                 const name = iter.first();
                 _ = iter.next();
@@ -954,7 +962,11 @@ fn onCompletion(io: *ourio.Ring, task: ourio.Task) anyerror!void {
 
                 const group: Group = .{
                     .name = name,
-                    .gid = try std.fmt.parseInt(u32, gid, 10),
+                    .gid = try std.fmt.parseInt(
+                        if (builtin.os.tag == .macos) i33 else u32,
+                        gid,
+                        10,
+                    ),
                 };
 
                 cmd.groups.appendAssumeCapacity(group);

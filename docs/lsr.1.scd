@@ -6,7 +6,7 @@ lsr - list directory contents, but with io_uring
 
 # SYNOPSIS
 
-*lsr* [options...] [directory]
+*lsr* [options...] [path]
 
 # DESCRIPTION
 

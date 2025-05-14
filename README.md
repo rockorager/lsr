@@ -19,7 +19,7 @@ which will install `lsr` and the associated manpage appropriately. Replace
 ## Usage
 
 ```
-lsr [options] [directory]
+lsr [options] [path]
 
   --help                           Print this message and exit
   --version                        Print the version string

@@ -8,7 +8,7 @@ const posix = std.posix;
 
 const usage =
     \\Usage: 
-    \\  lsr [options] [directory]
+    \\  lsr [options] [path]
     \\
     \\  --help                           Print this message and exit
     \\  --version                        Print the version string

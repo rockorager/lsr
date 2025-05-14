@@ -43,6 +43,7 @@ const Options = struct {
     reverse_sort: bool = false,
 
     directory: [:0]const u8 = ".",
+    file: ?[]const u8 = null,
 
     winsize: ?posix.winsize = null,
     colors: Colors = .none,
@@ -775,7 +776,32 @@ fn onCompletion(io: *ourio.Ring, task: ourio.Task) anyerror!void {
 
     switch (msg) {
         .cwd => {
-            const fd = try result.open;
+            const fd = result.open catch |err| {
+                switch (err) {
+                    error.NotDir => {
+                        // Guard against infinite recursion
+                        if (cmd.opts.file != null) return err;
+
+                        // if the user specified a file (or something that couldn't be opened as a
+                        // directory), then we open it's parent and apply a filter
+                        const dirname = std.fs.path.dirname(cmd.opts.directory) orelse ".";
+                        cmd.opts.file = std.fs.path.basename(cmd.opts.directory);
+                        cmd.opts.directory = try cmd.arena.dupeZ(u8, dirname);
+                        _ = try io.open(
+                            cmd.opts.directory,
+                            .{ .DIRECTORY = true, .CLOEXEC = true },
+                            0,
+                            .{
+                                .ptr = cmd,
+                                .cb = onCompletion,
+                                .msg = @intFromEnum(Msg.cwd),
+                            },
+                        );
+                        return;
+                    },
+                    else => return err,
+                }
+            };
             // we are async, no need to defer!
             _ = try io.close(fd, .{});
             const dir: std.fs.Dir = .{ .fd = fd };
@@ -806,6 +832,16 @@ fn onCompletion(io: *ourio.Ring, task: ourio.Task) anyerror!void {
             var iter = dir.iterate();
             while (try iter.next()) |dirent| {
                 if (!cmd.opts.showDotfiles() and std.mem.startsWith(u8, dirent.name, ".")) continue;
+                if (cmd.opts.file) |file| {
+                    if (eql(file, dirent.name)) {
+                        const nameZ = try cmd.arena.dupeZ(u8, dirent.name);
+                        try temp_results.append(cmd.arena, .{
+                            .name = nameZ,
+                            .kind = dirent.kind,
+                        });
+                    }
+                    continue;
+                }
                 const nameZ = try cmd.arena.dupeZ(u8, dirent.name);
                 try temp_results.append(cmd.arena, .{
                     .name = nameZ,

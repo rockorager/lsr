@@ -2,6 +2,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 const ourio = @import("ourio");
 const zeit = @import("zeit");
+const natord = @import("natord.zig");
 const build_options = @import("build_options");
 
 const posix = std.posix;
@@ -289,9 +290,7 @@ pub fn main() !void {
 
     if (cmd.entries.len == 0) return;
 
-    if (cmd.opts.sort_by_mod_time) {
-        std.sort.pdq(Entry, cmd.entries, cmd.opts, Entry.lessThan);
-    }
+    std.sort.pdq(Entry, cmd.entries, cmd.opts, Entry.lessThan);
 
     if (cmd.opts.reverse_sort) {
         std.mem.reverse(Entry, cmd.entries);
@@ -695,7 +694,7 @@ const Entry = struct {
             return lhs.statx.mtime.sec > rhs.statx.mtime.sec;
         }
 
-        return std.ascii.lessThanIgnoreCase(lhs.name, rhs.name);
+        return natord.orderIgnoreCase(lhs.name, rhs.name) == .lt;
     }
 
     fn modeStr(self: Entry) [10]u8 {
@@ -1196,4 +1195,8 @@ fn optKind(a: []const u8) enum { short, long, positional } {
     if (std.mem.startsWith(u8, a, "--")) return .long;
     if (std.mem.startsWith(u8, a, "-")) return .short;
     return .positional;
+}
+
+test "ref" {
+    _ = natord;
 }

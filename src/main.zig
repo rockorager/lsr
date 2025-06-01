@@ -167,6 +167,7 @@ pub fn main() !void {
                         'A' => cmd.opts.@"almost-all" = true,
                         'C' => cmd.opts.shortview = .columns,
                         'a' => cmd.opts.all = true,
+                        'h' => {}, // human-readable: present for compatibility
                         'l' => cmd.opts.long = true,
                         'r' => cmd.opts.reverse_sort = true,
                         't' => cmd.opts.sort_by_mod_time = true,
@@ -206,6 +207,8 @@ pub fn main() !void {
                         try stderr.print("Invalid color option: '{s}'", .{val});
                         std.process.exit(1);
                     };
+                } else if (eql(opt, "human-readable")) {
+                    // no-op: present for compatibility
                 } else if (eql(opt, "hyperlinks")) {
                     cmd.opts.hyperlinks = std.meta.stringToEnum(Options.When, val) orelse {
                         try stderr.print("Invalid hyperlinks option: '{s}'", .{val});

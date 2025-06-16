@@ -898,7 +898,7 @@ fn onCompletion(io: *ourio.Ring, task: ourio.Task) anyerror!void {
             // Largest TZ file on my system is Asia/Hebron at 4791 bytes. We allocate an amount
             // sufficiently more than that to make sure we do this in a single pass
             const buffer = try cmd.arena.alloc(u8, 8192);
-            _ = try io.read(fd, buffer, .{
+            _ = try io.read(fd, buffer, .file, .{
                 .cb = onCompletion,
                 .ptr = cmd,
                 .msg = @intFromEnum(Msg.read_localtime),
@@ -920,7 +920,7 @@ fn onCompletion(io: *ourio.Ring, task: ourio.Task) anyerror!void {
             // TODO: stat this or do multiple reads. We'll never know a good bound unless we go
             // really big
             const buffer = try cmd.arena.alloc(u8, 8192 * 2);
-            _ = try io.read(fd, buffer, .{
+            _ = try io.read(fd, buffer, .file, .{
                 .cb = onCompletion,
                 .ptr = cmd,
                 .msg = @intFromEnum(Msg.read_passwd),
@@ -968,7 +968,7 @@ fn onCompletion(io: *ourio.Ring, task: ourio.Task) anyerror!void {
             const fd = try result.open;
 
             const buffer = try cmd.arena.alloc(u8, 8192);
-            _ = try io.read(fd, buffer, .{
+            _ = try io.read(fd, buffer, .file, .{
                 .cb = onCompletion,
                 .ptr = cmd,
                 .msg = @intFromEnum(Msg.read_group),

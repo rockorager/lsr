@@ -16,7 +16,7 @@
 
         packages.default = pkgs.stdenv.mkDerivation {
           pname = "lsr";
-          version = "0.2.0";
+          version = "1.0.0";
           doCheck = false;
           src = ./.;
 

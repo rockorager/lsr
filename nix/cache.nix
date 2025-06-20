@@ -2,7 +2,7 @@
 
 pkgs.stdenv.mkDerivation {
   pname = "lsr-cache";
-  version = "0.1.0";
+  version = "0.2.0";
   doCheck = false;
   src = ../.;
 
@@ -17,7 +17,7 @@ pkgs.stdenv.mkDerivation {
     mv $ZIG_GLOBAL_CACHE_DIR/p $out
   '';
 
-  outputHash = "sha256-UeZOnpZ5iFF8f2WtO8qavzzau06/z/jPgYjcP9kHmWc=";
+  outputHash = "sha256-lnOow40km0mcj21i2mTQiDGXLhcSxQ2kJoAgUhkQiEg=";
   outputHashMode = "recursive";
   outputHashAlgo = "sha256";
 }

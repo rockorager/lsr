@@ -7,8 +7,8 @@
 
     .dependencies = .{
         .ourio = .{
-            .url = "git+https://github.com/rockorager/ourio#ed8a67650e5dbb0a6dca811c9d769187e306ad94",
-            .hash = "ourio-0.0.0-_s-z0dAWAgD3XNod2pTh0H8X-a3CjtpAwduh7jcgBz0G",
+            .url = "git+https://github.com/rockorager/ourio#c94a93d34c0b0082facdabc12b6b997f7ee8b648",
+            .hash = "ourio-0.0.0-_s-z0S0XAgB2nng8oxDng5AlACiqMTcFGq77494HMBXw",
         },
         .zeit = .{
             .url = "git+https://github.com/rockorager/zeit#4496d1c40b2223c22a1341e175fc2ecd94cc0de9",

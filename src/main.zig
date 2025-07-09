@@ -1130,21 +1130,21 @@ const Icon = struct {
 
     fn get(entry: Entry, opts: Options) Icon {
         // 1. By name
-        // 2. By extension
-        // 3. By type
+        // 2. By type
+        // 3. By extension
         if (by_name.get(entry.name)) |icon| return icon;
-
-        const ext = std.fs.path.extension(entry.name);
-        if (ext.len > 0) {
-            const ft = ext[1..];
-            if (by_extension.get(ft)) |icon| return icon;
-        }
 
         switch (entry.kind) {
             .block_device => return drive,
             .character_device => return drive,
             .directory => return directory,
             .file => {
+                const ext = std.fs.path.extension(entry.name);
+                if (ext.len > 0) {
+                    const ft = ext[1..];
+                    if (by_extension.get(ft)) |icon| return icon;
+                }
+
                 if (entry.isExecutable()) {
                     return executable;
                 }

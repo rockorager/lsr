@@ -9,7 +9,7 @@ const posix = std.posix;
 
 const usage =
     \\Usage: 
-    \\  lsr [options] [path]
+    \\  lsr [options] [path...]
     \\
     \\  --help                           Print this message and exit
     \\  --version                        Print the version string
@@ -43,7 +43,7 @@ const Options = struct {
     sort_by_mod_time: bool = false,
     reverse_sort: bool = false,
 
-    directory: [:0]const u8 = ".",
+    directories: std.ArrayListUnmanaged([:0]const u8) = .empty,
     file: ?[]const u8 = null,
 
     winsize: ?posix.winsize = null,
@@ -253,7 +253,7 @@ pub fn main() !void {
                 }
             },
             .positional => {
-                cmd.opts.directory = arg;
+                try cmd.opts.directories.append(allocator, arg);
             },
         }
     }
@@ -262,48 +262,75 @@ pub fn main() !void {
         cmd.opts.colors = .default;
     }
 
-    var ring: ourio.Ring = try .init(allocator, queue_size);
-    defer ring.deinit();
-
-    _ = try ring.open(cmd.opts.directory, .{ .DIRECTORY = true, .CLOEXEC = true }, 0, .{
-        .ptr = &cmd,
-        .cb = onCompletion,
-        .msg = @intFromEnum(Msg.cwd),
-    });
-
-    if (cmd.opts.long) {
-        _ = try ring.open("/etc/localtime", .{ .CLOEXEC = true }, 0, .{
-            .ptr = &cmd,
-            .cb = onCompletion,
-            .msg = @intFromEnum(Msg.localtime),
-        });
-        _ = try ring.open("/etc/passwd", .{ .CLOEXEC = true }, 0, .{
-            .ptr = &cmd,
-            .cb = onCompletion,
-            .msg = @intFromEnum(Msg.passwd),
-        });
-        _ = try ring.open("/etc/group", .{ .CLOEXEC = true }, 0, .{
-            .ptr = &cmd,
-            .cb = onCompletion,
-            .msg = @intFromEnum(Msg.group),
-        });
+    if (cmd.opts.directories.items.len == 0) {
+        try cmd.opts.directories.append(allocator, ".");
     }
 
-    try ring.run(.until_done);
+    const multiple_dirs = cmd.opts.directories.items.len > 1;
 
-    if (cmd.entries.len == 0) return;
+    for (cmd.opts.directories.items, 0..) |directory, dir_idx| {
+        cmd.entries = &.{};
+        cmd.entry_idx = 0;
+        cmd.symlinks.clearRetainingCapacity();
+        cmd.groups.clearRetainingCapacity();
+        cmd.users.clearRetainingCapacity();
+        cmd.tz = null;
+        cmd.opts.file = null;
+        cmd.current_directory = directory;
 
-    std.sort.pdq(Entry, cmd.entries, cmd.opts, Entry.lessThan);
+        var ring: ourio.Ring = try .init(allocator, queue_size);
+        defer ring.deinit();
 
-    if (cmd.opts.reverse_sort) {
-        std.mem.reverse(Entry, cmd.entries);
-    }
+        _ = try ring.open(directory, .{ .DIRECTORY = true, .CLOEXEC = true }, 0, .{
+            .ptr = &cmd,
+            .cb = onCompletion,
+            .msg = @intFromEnum(Msg.cwd),
+        });
 
-    if (cmd.opts.long) {
-        try printLong(cmd, bw.writer());
-    } else switch (cmd.opts.shortview) {
-        .columns => try printShortColumns(cmd, bw.writer()),
-        .oneline => try printShortOnePerLine(cmd, bw.writer()),
+        if (cmd.opts.long) {
+            _ = try ring.open("/etc/localtime", .{ .CLOEXEC = true }, 0, .{
+                .ptr = &cmd,
+                .cb = onCompletion,
+                .msg = @intFromEnum(Msg.localtime),
+            });
+            _ = try ring.open("/etc/passwd", .{ .CLOEXEC = true }, 0, .{
+                .ptr = &cmd,
+                .cb = onCompletion,
+                .msg = @intFromEnum(Msg.passwd),
+            });
+            _ = try ring.open("/etc/group", .{ .CLOEXEC = true }, 0, .{
+                .ptr = &cmd,
+                .cb = onCompletion,
+                .msg = @intFromEnum(Msg.group),
+            });
+        }
+
+        try ring.run(.until_done);
+
+        if (cmd.entries.len == 0) {
+            if (multiple_dirs and dir_idx < cmd.opts.directories.items.len - 1) {
+                try bw.writer().writeAll("\r\n");
+            }
+            continue;
+        }
+
+        std.sort.pdq(Entry, cmd.entries, cmd.opts, Entry.lessThan);
+
+        if (cmd.opts.reverse_sort) {
+            std.mem.reverse(Entry, cmd.entries);
+        }
+
+        if (multiple_dirs) {
+            if (dir_idx > 0) try bw.writer().writeAll("\r\n");
+            try bw.writer().print("{s}:\r\n", .{directory});
+        }
+
+        if (cmd.opts.long) {
+            try printLong(cmd, bw.writer());
+        } else switch (cmd.opts.shortview) {
+            .columns => try printShortColumns(cmd, bw.writer()),
+            .oneline => try printShortOnePerLine(cmd, bw.writer()),
+        }
     }
     try bw.flush();
 }
@@ -420,7 +447,7 @@ fn printShortEntry(entry: Entry, cmd: Command, writer: anytype) !void {
     }
 
     if (opts.useHyperlinks()) {
-        const path = try std.fs.path.join(cmd.arena, &.{ opts.directory, entry.name });
+        const path = try std.fs.path.join(cmd.arena, &.{ cmd.current_directory, entry.name });
         try writer.print("\x1b]8;;file://{s}\x1b\\", .{path});
         try writer.writeAll(entry.name);
         try writer.writeAll("\x1b]8;;\x1b\\");
@@ -562,7 +589,7 @@ fn printLong(cmd: Command, writer: anytype) !void {
         }
 
         if (cmd.opts.useHyperlinks()) {
-            const path = try std.fs.path.join(cmd.arena, &.{ cmd.opts.directory, entry.name });
+            const path = try std.fs.path.join(cmd.arena, &.{ cmd.current_directory, entry.name });
             try writer.print("\x1b]8;;file://{s}\x1b\\", .{path});
             try writer.writeAll(entry.name);
             try writer.writeAll("\x1b]8;;\x1b\\");
@@ -606,6 +633,7 @@ const Command = struct {
     entries: []Entry = &.{},
     entry_idx: usize = 0,
     symlinks: std.StringHashMapUnmanaged(Symlink) = .empty,
+    current_directory: [:0]const u8 = ".",
 
     tz: ?zeit.TimeZone = null,
     groups: std.ArrayListUnmanaged(Group) = .empty,
@@ -786,11 +814,11 @@ fn onCompletion(io: *ourio.Ring, task: ourio.Task) anyerror!void {
 
                         // if the user specified a file (or something that couldn't be opened as a
                         // directory), then we open it's parent and apply a filter
-                        const dirname = std.fs.path.dirname(cmd.opts.directory) orelse ".";
-                        cmd.opts.file = std.fs.path.basename(cmd.opts.directory);
-                        cmd.opts.directory = try cmd.arena.dupeZ(u8, dirname);
+                        const dirname = std.fs.path.dirname(cmd.current_directory) orelse ".";
+                        cmd.opts.file = std.fs.path.basename(cmd.current_directory);
+                        cmd.current_directory = try cmd.arena.dupeZ(u8, dirname);
                         _ = try io.open(
-                            cmd.opts.directory,
+                            cmd.current_directory,
                             .{ .DIRECTORY = true, .CLOEXEC = true },
                             0,
                             .{
@@ -811,7 +839,7 @@ fn onCompletion(io: *ourio.Ring, task: ourio.Task) anyerror!void {
             if (cmd.opts.useHyperlinks()) {
                 var buf: [std.fs.max_path_bytes]u8 = undefined;
                 const cwd = try std.os.getFdPath(fd, &buf);
-                cmd.opts.directory = try cmd.arena.dupeZ(u8, cwd);
+                cmd.current_directory = try cmd.arena.dupeZ(u8, cwd);
             }
 
             var temp_results: std.ArrayListUnmanaged(MinimalEntry) = .empty;
@@ -873,7 +901,7 @@ fn onCompletion(io: *ourio.Ring, task: ourio.Task) anyerror!void {
                 }
                 const path = try std.fs.path.joinZ(
                     cmd.arena,
-                    &.{ cmd.opts.directory, entry.name },
+                    &.{ cmd.current_directory, entry.name },
                 );
 
                 if (entry.kind == .sym_link) {
@@ -1040,7 +1068,7 @@ fn onCompletion(io: *ourio.Ring, task: ourio.Task) anyerror!void {
             cmd.entry_idx += 1;
             const path = try std.fs.path.joinZ(
                 cmd.arena,
-                &.{ cmd.opts.directory, entry.name },
+                &.{ cmd.current_directory, entry.name },
             );
 
             if (entry.kind == .sym_link) {

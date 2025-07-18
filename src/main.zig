@@ -397,7 +397,7 @@ fn printShortEntry(entry: Entry, cmd: Command, writer: anytype) !void {
     const opts = cmd.opts;
     const colors = opts.colors;
     if (opts.useIcons()) {
-        const icon = Icon.get(entry, opts);
+        const icon = Icon.get(entry);
 
         if (opts.useColor()) {
             try writer.writeAll(icon.color);
@@ -538,7 +538,7 @@ fn printLong(cmd: Command, writer: anytype) !void {
         }
 
         if (cmd.opts.useIcons()) {
-            const icon = Icon.get(entry, cmd.opts);
+            const icon = Icon.get(entry);
 
             if (cmd.opts.useColor()) {
                 try writer.writeAll(icon.color);
@@ -1128,7 +1128,7 @@ const Icon = struct {
         .{ "zon", Icon.zig },
     });
 
-    fn get(entry: Entry, opts: Options) Icon {
+    fn get(entry: Entry) Icon {
         // 1. By name
         // 2. By type
         // 3. By extension
@@ -1152,7 +1152,7 @@ const Icon = struct {
             },
             .named_pipe => return pipe,
             .sym_link => {
-                if (opts.long and posix.S.ISDIR(entry.statx.mode)) {
+                if (posix.S.ISDIR(entry.statx.mode)) {
                     return symlink_dir;
                 }
                 return symlink;

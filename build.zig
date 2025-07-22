@@ -45,6 +45,7 @@ pub fn build(b: *std.Build) void {
         .name = "lsr",
         .root_module = exe_mod,
     });
+    exe.linkLibC();
 
     b.installArtifact(exe);
 

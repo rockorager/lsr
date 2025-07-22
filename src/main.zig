@@ -4,6 +4,9 @@ const ourio = @import("ourio");
 const zeit = @import("zeit");
 const natord = @import("natord.zig");
 const build_options = @import("build_options");
+const grp = @cImport({
+    @cInclude("grp.h");
+});
 
 const posix = std.posix;
 
@@ -343,7 +346,7 @@ pub fn main() !void {
             if (multiple_dirs and dir_idx > 0) try bw.writer().writeAll("\r\n");
             try printTree(cmd, bw.writer());
         } else if (cmd.opts.long) {
-            try printLong(cmd, bw.writer());
+            try printLong(&cmd, bw.writer());
         } else switch (cmd.opts.shortview) {
             .columns => try printShortColumns(cmd, bw.writer()),
             .oneline => try printShortOnePerLine(cmd, bw.writer()),
@@ -537,12 +540,14 @@ fn printTree(cmd: Command, writer: anytype) !void {
 }
 
 fn recurseTree(cmd: Command, writer: anytype, dir_path: [:0]const u8, prefix_list: *std.ArrayList(bool), depth: usize, max_depth: usize) !void {
-    var dir = std.fs.cwd().openDir(dir_path, .{ .iterate = true }) catch { return; };
+    var dir = std.fs.cwd().openDir(dir_path, .{ .iterate = true }) catch {
+        return;
+    };
     defer dir.close();
 
     var entries = std.ArrayList(Entry).init(cmd.arena);
     var iter = dir.iterate();
-    
+
     while (try iter.next()) |dirent| {
         if (!cmd.opts.showDotfiles() and std.mem.startsWith(u8, dirent.name, ".")) continue;
 
@@ -622,7 +627,7 @@ fn printTreeEntry(entry: Entry, cmd: Command, writer: anytype, dir_path: [:0]con
     }
 }
 
-fn printLong(cmd: Command, writer: anytype) !void {
+fn printLong(cmd: *Command, writer: anytype) !void {
     const tz = cmd.tz.?;
     const now = zeit.instant(.{}) catch unreachable;
     const one_year_ago = try now.subtract(.{ .days = 365 });
@@ -634,8 +639,8 @@ fn printLong(cmd: Command, writer: anytype) !void {
         var n_size: usize = 0;
         var n_suff: usize = 0;
         for (cmd.entries) |entry| {
-            const group = cmd.getGroup(entry.statx.gid);
-            const user = cmd.getUser(entry.statx.uid);
+            const group = try cmd.getGroup(entry.statx.gid);
+            const user = try cmd.getUser(entry.statx.uid);
 
             var buf: [16]u8 = undefined;
             const size = try entry.humanReadableSize(&buf);
@@ -666,12 +671,12 @@ fn printLong(cmd: Command, writer: anytype) !void {
     };
 
     for (cmd.entries) |entry| {
-        const user: User = cmd.getUser(entry.statx.uid) orelse
+        const user: User = try cmd.getUser(entry.statx.uid) orelse
             .{
                 .uid = entry.statx.uid,
                 .name = try std.fmt.allocPrint(cmd.arena, "{d}", .{entry.statx.uid}),
             };
-        const group: Group = cmd.getGroup(entry.statx.gid) orelse
+        const group: Group = try cmd.getGroup(entry.statx.gid) orelse
             .{
                 .gid = entry.statx.gid,
                 .name = try std.fmt.allocPrint(cmd.arena, "{d}", .{entry.statx.gid}),
@@ -788,16 +793,36 @@ const Command = struct {
     groups: std.ArrayListUnmanaged(Group) = .empty,
     users: std.ArrayListUnmanaged(User) = .empty,
 
-    fn getUser(self: Command, uid: posix.uid_t) ?User {
+    fn getUser(self: *Command, uid: posix.uid_t) !?User {
         for (self.users.items) |user| {
             if (user.uid == uid) return user;
+        }
+        const user_nullable = std.c.getpwuid(uid);
+        if (user_nullable) |user| {
+            if (user.name) |name| {
+                const new_user = User{
+                    .uid = uid,
+                    .name = std.mem.span(name),
+                };
+                try self.users.append(self.arena, new_user);
+                return new_user;
+            }
         }
         return null;
     }
 
-    fn getGroup(self: Command, gid: posix.gid_t) ?Group {
+    fn getGroup(self: *Command, gid: posix.gid_t) !?Group {
         for (self.groups.items) |group| {
             if (group.gid == gid) return group;
+        }
+        const grp_group_nullable = grp.getgrgid(gid);
+        if (grp_group_nullable) |grp_group_ptr| {
+            const new_group = Group{
+                .gid = gid,
+                .name = std.mem.span(grp_group_ptr.*.gr_name),
+            };
+            try self.groups.append(self.arena, new_group);
+            return new_group;
         }
         return null;
     }

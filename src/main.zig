@@ -26,6 +26,7 @@ const usage =
     \\  -l, --long                       Display extended file metadata
     \\  -r, --reverse                    Reverse the sort order
     \\  -t, --time                       Sort the entries by modification time, most recent first
+    \\      --tree[=DEPTH]               Display entries in a tree format (optional limit depth)
     \\
 ;
 
@@ -42,6 +43,8 @@ const Options = struct {
     long: bool = false,
     sort_by_mod_time: bool = false,
     reverse_sort: bool = false,
+    tree: bool = false,
+    tree_depth: ?usize = null,
 
     directories: std.ArrayListUnmanaged([:0]const u8) = .empty,
     file: ?[]const u8 = null,
@@ -241,6 +244,17 @@ pub fn main() !void {
                         try stderr.print("Invalid boolean: '{s}'", .{val});
                         std.process.exit(1);
                     };
+                } else if (eql(opt, "tree")) {
+                    if (val.len == 0) {
+                        cmd.opts.tree = true;
+                        cmd.opts.tree_depth = null; // unlimited depth
+                    } else {
+                        cmd.opts.tree = true;
+                        cmd.opts.tree_depth = std.fmt.parseInt(usize, val, 10) catch {
+                            try stderr.print("Invalid tree depth: '{s}'", .{val});
+                            std.process.exit(1);
+                        };
+                    }
                 } else if (eql(opt, "help")) {
                     return stderr.writeAll(usage);
                 } else if (eql(opt, "version")) {
@@ -320,12 +334,15 @@ pub fn main() !void {
             std.mem.reverse(Entry, cmd.entries);
         }
 
-        if (multiple_dirs) {
+        if (multiple_dirs and !cmd.opts.tree) {
             if (dir_idx > 0) try bw.writer().writeAll("\r\n");
             try bw.writer().print("{s}:\r\n", .{directory});
         }
 
-        if (cmd.opts.long) {
+        if (cmd.opts.tree) {
+            if (multiple_dirs and dir_idx > 0) try bw.writer().writeAll("\r\n");
+            try printTree(cmd, bw.writer());
+        } else if (cmd.opts.long) {
             try printLong(cmd, bw.writer());
         } else switch (cmd.opts.shortview) {
             .columns => try printShortColumns(cmd, bw.writer()),
@@ -470,6 +487,138 @@ fn printShortOnePerLine(cmd: Command, writer: anytype) !void {
     for (cmd.entries) |entry| {
         try printShortEntry(entry, cmd, writer);
         try writer.writeAll("\r\n");
+    }
+}
+
+fn drawTreePrefix(writer: anytype, prefix_list: []const bool, is_last: bool) !void {
+    for (prefix_list) |is_last_at_level| {
+        if (is_last_at_level) {
+            try writer.writeAll("    ");
+        } else {
+            try writer.writeAll("│   ");
+        }
+    }
+
+    if (is_last) {
+        try writer.writeAll("└── ");
+    } else {
+        try writer.writeAll("├── ");
+    }
+}
+
+fn printTree(cmd: Command, writer: anytype) !void {
+    const dir_name = if (std.mem.eql(u8, cmd.current_directory, ".")) blk: {
+        var buf: [std.fs.max_path_bytes]u8 = undefined;
+        const cwd = try std.process.getCwd(&buf);
+        break :blk std.fs.path.basename(cwd);
+    } else std.fs.path.basename(cmd.current_directory);
+
+    try writer.print("{s}\n", .{dir_name});
+
+    const max_depth = cmd.opts.tree_depth orelse std.math.maxInt(usize);
+    var prefix_list = std.ArrayList(bool).init(cmd.arena);
+
+    for (cmd.entries, 0..) |entry, i| {
+        const is_last = i == cmd.entries.len - 1;
+
+        try drawTreePrefix(writer, prefix_list.items, is_last);
+        try printShortEntry(entry, cmd, writer);
+        try writer.writeAll("\r\n");
+
+        if (entry.kind == .directory and max_depth > 0) {
+            const full_path = try std.fs.path.joinZ(cmd.arena, &.{ cmd.current_directory, entry.name });
+
+            try prefix_list.append(is_last);
+            try recurseTree(cmd, writer, full_path, &prefix_list, 1, max_depth);
+
+            _ = prefix_list.pop();
+        }
+    }
+}
+
+fn recurseTree(cmd: Command, writer: anytype, dir_path: [:0]const u8, prefix_list: *std.ArrayList(bool), depth: usize, max_depth: usize) !void {
+    var dir = std.fs.cwd().openDir(dir_path, .{ .iterate = true }) catch { return; };
+    defer dir.close();
+
+    var entries = std.ArrayList(Entry).init(cmd.arena);
+    var iter = dir.iterate();
+    
+    while (try iter.next()) |dirent| {
+        if (!cmd.opts.showDotfiles() and std.mem.startsWith(u8, dirent.name, ".")) continue;
+
+        const nameZ = try cmd.arena.dupeZ(u8, dirent.name);
+        try entries.append(.{
+            .name = nameZ,
+            .kind = dirent.kind,
+            .statx = undefined,
+        });
+    }
+
+    std.sort.pdq(Entry, entries.items, cmd.opts, Entry.lessThan);
+
+    if (cmd.opts.reverse_sort) {
+        std.mem.reverse(Entry, entries.items);
+    }
+
+    for (entries.items, 0..) |entry, i| {
+        const is_last = i == entries.items.len - 1;
+
+        try drawTreePrefix(writer, prefix_list.items, is_last);
+        try printTreeEntry(entry, cmd, writer, dir_path);
+        try writer.writeAll("\r\n");
+
+        if (entry.kind == .directory and depth < max_depth) {
+            const full_path = try std.fs.path.joinZ(cmd.arena, &.{ dir_path, entry.name });
+
+            try prefix_list.append(is_last);
+            try recurseTree(cmd, writer, full_path, prefix_list, depth + 1, max_depth);
+
+            _ = prefix_list.pop();
+        }
+    }
+}
+
+fn printTreeEntry(entry: Entry, cmd: Command, writer: anytype, dir_path: [:0]const u8) !void {
+    const opts = cmd.opts;
+    const colors = opts.colors;
+
+    if (opts.useIcons()) {
+        const icon = Icon.get(entry);
+
+        if (opts.useColor()) {
+            try writer.writeAll(icon.color);
+            try writer.writeAll(icon.icon);
+            try writer.writeAll(colors.reset);
+        } else {
+            try writer.writeAll(icon.icon);
+        }
+
+        try writer.writeByte(' ');
+    }
+
+    switch (entry.kind) {
+        .directory => try writer.writeAll(colors.dir),
+        .sym_link => try writer.writeAll(colors.symlink),
+        else => {
+            const full_path = try std.fs.path.join(cmd.arena, &.{ dir_path, entry.name });
+            const stat_result = std.fs.cwd().statFile(full_path) catch null;
+            if (stat_result) |stat| {
+                if (stat.mode & (std.posix.S.IXUSR | std.posix.S.IXGRP | std.posix.S.IXOTH) != 0) {
+                    try writer.writeAll(colors.executable);
+                }
+            }
+        },
+    }
+
+    if (opts.useHyperlinks()) {
+        const path = try std.fs.path.join(cmd.arena, &.{ dir_path, entry.name });
+        try writer.print("\x1b]8;;file://{s}\x1b\\", .{path});
+        try writer.writeAll(entry.name);
+        try writer.writeAll("\x1b]8;;\x1b\\");
+        try writer.writeAll(colors.reset);
+    } else {
+        try writer.writeAll(entry.name);
+        try writer.writeAll(colors.reset);
     }
 }
 

@@ -178,7 +178,7 @@ pub fn main() !void {
                         'r' => cmd.opts.reverse_sort = true,
                         't' => cmd.opts.sort_by_mod_time = true,
                         else => {
-                            try stderr.print("Invalid opt: '{c}'", .{b});
+                            try stderr.print("Invalid opt: '{c}'\n", .{b});
                             std.process.exit(1);
                         },
                     }
@@ -190,61 +190,61 @@ pub fn main() !void {
                 const val = split.rest();
                 if (eql(opt, "all")) {
                     cmd.opts.all = parseArgBool(val) orelse {
-                        try stderr.print("Invalid boolean: '{s}'", .{val});
+                        try stderr.print("Invalid boolean: '{s}'\n", .{val});
                         std.process.exit(1);
                     };
                 } else if (eql(opt, "long")) {
                     cmd.opts.long = parseArgBool(val) orelse {
-                        try stderr.print("Invalid boolean: '{s}'", .{val});
+                        try stderr.print("Invalid boolean: '{s}'\n", .{val});
                         std.process.exit(1);
                     };
                 } else if (eql(opt, "almost-all")) {
                     cmd.opts.@"almost-all" = parseArgBool(val) orelse {
-                        try stderr.print("Invalid boolean: '{s}'", .{val});
+                        try stderr.print("Invalid boolean: '{s}'\n", .{val});
                         std.process.exit(1);
                     };
                 } else if (eql(opt, "group-directories-first")) {
                     cmd.opts.@"group-directories-first" = parseArgBool(val) orelse {
-                        try stderr.print("Invalid boolean: '{s}'", .{val});
+                        try stderr.print("Invalid boolean: '{s}'\n", .{val});
                         std.process.exit(1);
                     };
                 } else if (eql(opt, "color")) {
                     cmd.opts.color = std.meta.stringToEnum(Options.When, val) orelse {
-                        try stderr.print("Invalid color option: '{s}'", .{val});
+                        try stderr.print("Invalid color option: '{s}'\n", .{val});
                         std.process.exit(1);
                     };
                 } else if (eql(opt, "human-readable")) {
                     // no-op: present for compatibility
                 } else if (eql(opt, "hyperlinks")) {
                     cmd.opts.hyperlinks = std.meta.stringToEnum(Options.When, val) orelse {
-                        try stderr.print("Invalid hyperlinks option: '{s}'", .{val});
+                        try stderr.print("Invalid hyperlinks option: '{s}'\n", .{val});
                         std.process.exit(1);
                     };
                 } else if (eql(opt, "icons")) {
                     cmd.opts.icons = std.meta.stringToEnum(Options.When, val) orelse {
-                        try stderr.print("Invalid color option: '{s}'", .{val});
+                        try stderr.print("Invalid color option: '{s}'\n", .{val});
                         std.process.exit(1);
                     };
                 } else if (eql(opt, "columns")) {
                     const c = parseArgBool(val) orelse {
-                        try stderr.print("Invalid columns option: '{s}'", .{val});
+                        try stderr.print("Invalid columns option: '{s}'\n", .{val});
                         std.process.exit(1);
                     };
                     cmd.opts.shortview = if (c) .columns else .oneline;
                 } else if (eql(opt, "oneline")) {
                     const o = parseArgBool(val) orelse {
-                        try stderr.print("Invalid oneline option: '{s}'", .{val});
+                        try stderr.print("Invalid oneline option: '{s}'\n", .{val});
                         std.process.exit(1);
                     };
                     cmd.opts.shortview = if (o) .oneline else .columns;
                 } else if (eql(opt, "time")) {
                     cmd.opts.sort_by_mod_time = parseArgBool(val) orelse {
-                        try stderr.print("Invalid boolean: '{s}'", .{val});
+                        try stderr.print("Invalid boolean: '{s}'\n", .{val});
                         std.process.exit(1);
                     };
                 } else if (eql(opt, "reverse")) {
                     cmd.opts.reverse_sort = parseArgBool(val) orelse {
-                        try stderr.print("Invalid boolean: '{s}'", .{val});
+                        try stderr.print("Invalid boolean: '{s}'\n", .{val});
                         std.process.exit(1);
                     };
                 } else if (eql(opt, "tree")) {
@@ -254,7 +254,7 @@ pub fn main() !void {
                     } else {
                         cmd.opts.tree = true;
                         cmd.opts.tree_depth = std.fmt.parseInt(usize, val, 10) catch {
-                            try stderr.print("Invalid tree depth: '{s}'", .{val});
+                            try stderr.print("Invalid tree depth: '{s}'\n", .{val});
                             std.process.exit(1);
                         };
                     }
@@ -265,7 +265,7 @@ pub fn main() !void {
                     try bw.flush();
                     return;
                 } else {
-                    try stderr.print("Invalid opt: '{s}'", .{opt});
+                    try stderr.print("Invalid opt: '{s}'\n", .{opt});
                     std.process.exit(1);
                 }
             },
@@ -797,8 +797,7 @@ const Command = struct {
         for (self.users.items) |user| {
             if (user.uid == uid) return user;
         }
-        const user_nullable = std.c.getpwuid(uid);
-        if (user_nullable) |user| {
+        if (std.c.getpwuid(uid)) |user| {
             if (user.name) |name| {
                 const new_user = User{
                     .uid = uid,
@@ -815,11 +814,10 @@ const Command = struct {
         for (self.groups.items) |group| {
             if (group.gid == gid) return group;
         }
-        const grp_group_nullable = grp.getgrgid(gid);
-        if (grp_group_nullable) |grp_group_ptr| {
+        if (grp.getgrgid(gid)) |group| {
             const new_group = Group{
                 .gid = gid,
-                .name = std.mem.span(grp_group_ptr.*.gr_name),
+                .name = std.mem.span(group.*.gr_name),
             };
             try self.groups.append(self.arena, new_group);
             return new_group;

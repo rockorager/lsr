@@ -7,16 +7,16 @@
 
     .dependencies = .{
         .ourio = .{
-            .url = "git+https://github.com/rockorager/ourio#c94a93d34c0b0082facdabc12b6b997f7ee8b648",
-            .hash = "ourio-0.0.0-_s-z0S0XAgB2nng8oxDng5AlACiqMTcFGq77494HMBXw",
+            .url = "git+https://github.com/rockorager/ourio#07bf94db87a9aea70d6e1a1dd99cac6fb9d38b35",
+            .hash = "ourio-0.0.0-_s-z0Z0XAgBU_BFjdY8QjGhJ8vcdIONPSErlYRwLoxfg",
         },
         .zeit = .{
-            .url = "git+https://github.com/rockorager/zeit#4496d1c40b2223c22a1341e175fc2ecd94cc0de9",
-            .hash = "zeit-0.6.0-5I6bk1J1AgA13rteb6E0steXiOUKBYTzJZMMIuK9oEmb",
+            .url = "git+https://github.com/rockorager/zeit#74be5a2afb346b2a6a6349abbb609e89ec7e65a6",
+            .hash = "zeit-0.6.0-5I6bk4t8AgCP0UGGHVF_khlmWZkAF5XtfQWEKCyLoptU",
         },
         .zzdoc = .{
-            .url = "git+https://github.com/rockorager/zzdoc#57e86eb4e621bc4a96fbe0dd89ad0986db6d0483",
-            .hash = "zzdoc-0.0.0-tzT1PuPZAACr1jIJxjTrdOsLbfXS6idWFGfTq0gwxJiv",
+            .url = "git+https://github.com/rockorager/zzdoc#a54223bdc13a80839ccf9f473edf3a171e777946",
+            .hash = "zzdoc-0.0.0-tzT1Ph7cAAC5YmXQXiBJHAg41_A5AUAC5VOm7ShnUxlz",
         },
     },
     .paths = .{

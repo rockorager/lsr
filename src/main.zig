@@ -152,13 +152,16 @@ pub fn main() !void {
 
     var cmd: Command = .{ .arena = allocator };
 
-    cmd.opts.winsize = getWinsize(std.io.getStdOut().handle);
+    cmd.opts.winsize = getWinsize(std.fs.File.stdout().handle);
 
     cmd.opts.shortview = if (cmd.opts.isatty()) .columns else .oneline;
 
-    const stdout = std.io.getStdOut().writer();
-    const stderr = std.io.getStdErr().writer();
-    var bw = std.io.bufferedWriter(stdout);
+    var stdout_buf: [4096]u8 = undefined;
+    var stderr_buf: [4096]u8 = undefined;
+    var stdout_writer = std.fs.File.stdout().writer(&stdout_buf);
+    var stderr_writer = std.fs.File.stderr().writer(&stderr_buf);
+    var stdout = &stdout_writer.interface;
+    var stderr = &stderr_writer.interface;
 
     var args = std.process.args();
     // skip binary
@@ -261,8 +264,8 @@ pub fn main() !void {
                 } else if (eql(opt, "help")) {
                     return stderr.writeAll(usage);
                 } else if (eql(opt, "version")) {
-                    try bw.writer().print("lsr {s}\r\n", .{build_options.version});
-                    try bw.flush();
+                    try stdout.print("lsr {s}\r\n", .{build_options.version});
+try stdout.flush();
                     return;
                 } else {
                     try stderr.print("Invalid opt: '{s}'\n", .{opt});
@@ -326,7 +329,7 @@ pub fn main() !void {
 
         if (cmd.entries.len == 0) {
             if (multiple_dirs and dir_idx < cmd.opts.directories.items.len - 1) {
-                try bw.writer().writeAll("\r\n");
+                try stdout.writeAll("\r\n");
             }
             continue;
         }
@@ -338,21 +341,21 @@ pub fn main() !void {
         }
 
         if (multiple_dirs and !cmd.opts.tree) {
-            if (dir_idx > 0) try bw.writer().writeAll("\r\n");
-            try bw.writer().print("{s}:\r\n", .{directory});
+            if (dir_idx > 0) try stdout.writeAll("\r\n");
+            try stdout.print("{s}:\r\n", .{directory});
         }
 
         if (cmd.opts.tree) {
-            if (multiple_dirs and dir_idx > 0) try bw.writer().writeAll("\r\n");
-            try printTree(cmd, bw.writer());
+            if (multiple_dirs and dir_idx > 0) try stdout.writeAll("\r\n");
+            try printTree(cmd, stdout);
         } else if (cmd.opts.long) {
-            try printLong(&cmd, bw.writer());
+            try printLong(&cmd, stdout);
         } else switch (cmd.opts.shortview) {
-            .columns => try printShortColumns(cmd, bw.writer()),
-            .oneline => try printShortOnePerLine(cmd, bw.writer()),
+            .columns => try printShortColumns(cmd, stdout),
+.oneline => try printShortOnePerLine(cmd, stdout),
         }
     }
-    try bw.flush();
+    try stdout.flush();
 }
 
 fn printShortColumns(cmd: Command, writer: anytype) !void {
@@ -429,7 +432,8 @@ fn printShortColumns(cmd: Command, writer: anytype) !void {
 
             if (i < columns.items.len - 1) {
                 const spaces = column.width - (icon_width + entry.name.len);
-                try writer.writeByteNTimes(' ', spaces);
+                var space_buf = [_][]const u8{" "};
+        try writer.writeSplatAll(&space_buf, spaces);
             }
         }
         try writer.writeAll("\r\n");
@@ -519,7 +523,7 @@ fn printTree(cmd: Command, writer: anytype) !void {
     try writer.print("{s}\n", .{dir_name});
 
     const max_depth = cmd.opts.tree_depth orelse std.math.maxInt(usize);
-    var prefix_list = std.ArrayList(bool).init(cmd.arena);
+    var prefix_list: std.ArrayList(bool) = .{};
 
     for (cmd.entries, 0..) |entry, i| {
         const is_last = i == cmd.entries.len - 1;
@@ -531,7 +535,7 @@ fn printTree(cmd: Command, writer: anytype) !void {
         if (entry.kind == .directory and max_depth > 0) {
             const full_path = try std.fs.path.joinZ(cmd.arena, &.{ cmd.current_directory, entry.name });
 
-            try prefix_list.append(is_last);
+            try prefix_list.append(cmd.arena, is_last);
             try recurseTree(cmd, writer, full_path, &prefix_list, 1, max_depth);
 
             _ = prefix_list.pop();
@@ -545,14 +549,14 @@ fn recurseTree(cmd: Command, writer: anytype, dir_path: [:0]const u8, prefix_lis
     };
     defer dir.close();
 
-    var entries = std.ArrayList(Entry).init(cmd.arena);
+    var entries: std.ArrayList(Entry) = .{};
     var iter = dir.iterate();
 
     while (try iter.next()) |dirent| {
         if (!cmd.opts.showDotfiles() and std.mem.startsWith(u8, dirent.name, ".")) continue;
 
         const nameZ = try cmd.arena.dupeZ(u8, dirent.name);
-        try entries.append(.{
+        try entries.append(cmd.arena, .{
             .name = nameZ,
             .kind = dirent.kind,
             .statx = undefined,
@@ -575,7 +579,7 @@ fn recurseTree(cmd: Command, writer: anytype, dir_path: [:0]const u8, prefix_lis
         if (entry.kind == .directory and depth < max_depth) {
             const full_path = try std.fs.path.joinZ(cmd.arena, &.{ dir_path, entry.name });
 
-            try prefix_list.append(is_last);
+            try prefix_list.append(cmd.arena, is_last);
             try recurseTree(cmd, writer, full_path, prefix_list, depth + 1, max_depth);
 
             _ = prefix_list.pop();
@@ -690,21 +694,25 @@ fn printLong(cmd: *Command, writer: anytype) !void {
         try writer.writeAll(&mode);
         try writer.writeByte(' ');
         try writer.writeAll(user.name);
-        try writer.writeByteNTimes(' ', longest_user - user.name.len);
+        var space_buf1 = [_][]const u8{" "};
+        try writer.writeSplatAll(&space_buf1, longest_user - user.name.len);
         try writer.writeByte(' ');
         try writer.writeAll(group.name);
-        try writer.writeByteNTimes(' ', longest_group - group.name.len);
+        var space_buf2 = [_][]const u8{" "};
+        try writer.writeSplatAll(&space_buf2, longest_group - group.name.len);
         try writer.writeByte(' ');
 
         var size_buf: [16]u8 = undefined;
         const size = try entry.humanReadableSize(&size_buf);
         const suffix = entry.humanReadableSuffix();
 
-        try writer.writeByteNTimes(' ', longest_size - size.len);
+        var space_buf3 = [_][]const u8{" "};
+        try writer.writeSplatAll(&space_buf3, longest_size - size.len);
         try writer.writeAll(size);
         try writer.writeByte(' ');
         try writer.writeAll(suffix);
-        try writer.writeByteNTimes(' ', longest_suffix - suffix.len);
+        var space_buf4 = [_][]const u8{" "};
+        try writer.writeSplatAll(&space_buf4, longest_suffix - suffix.len);
         try writer.writeByte(' ');
 
         try writer.print("{d: >2} {s} ", .{
@@ -1109,8 +1117,8 @@ fn onCompletion(io: *ourio.Ring, task: ourio.Task) anyerror!void {
             const n = try result.read;
             _ = try io.close(task.req.read.fd, .{});
             const bytes = task.req.read.buffer[0..n];
-            var fbs = std.io.fixedBufferStream(bytes);
-            const tz = try zeit.timezone.TZInfo.parse(cmd.arena, fbs.reader());
+            var reader = std.Io.Reader.fixed(bytes);
+            const tz = try zeit.timezone.TZInfo.parse(cmd.arena, &reader);
             cmd.tz = .{ .tzinfo = tz };
         },
 

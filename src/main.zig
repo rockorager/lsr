@@ -526,6 +526,7 @@ fn printTree(cmd: Command, writer: anytype) !void {
     var prefix_list: std.ArrayList(bool) = .{};
 
     for (cmd.entries, 0..) |entry, i| {
+        if (std.mem.eql(u8, entry.name, ".") or std.mem.eql(u8, entry.name, "..")) continue;
         const is_last = i == cmd.entries.len - 1;
 
         try drawTreePrefix(writer, prefix_list.items, is_last);

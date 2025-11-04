@@ -3,10 +3,8 @@ const builtin = @import("builtin");
 const ourio = @import("ourio");
 const zeit = @import("zeit");
 const natord = @import("natord.zig");
+const Icon = @import("icon.zig");
 const build_options = @import("build_options");
-const grp = @cImport({
-    @cInclude("grp.h");
-});
 
 const posix = std.posix;
 
@@ -35,7 +33,7 @@ const usage =
 
 const queue_size = 256;
 
-const Options = struct {
+pub const Options = struct {
     all: bool = false,
     @"almost-all": bool = false,
     color: When = .auto,
@@ -61,7 +59,7 @@ const Options = struct {
         always,
     };
 
-    const Colors = struct {
+    pub const Colors = struct {
         reset: []const u8,
         dir: []const u8,
         executable: []const u8,
@@ -69,7 +67,7 @@ const Options = struct {
         symlink_target: []const u8,
         symlink_missing: []const u8,
 
-        const none: Colors = .{
+        pub const none: Colors = .{
             .reset = "",
             .dir = "",
             .executable = "",
@@ -78,7 +76,7 @@ const Options = struct {
             .symlink_missing = "",
         };
 
-        const default: Colors = .{
+        pub const default: Colors = .{
             .reset = _reset,
             .dir = bold ++ blue,
             .executable = bold ++ green,
@@ -87,16 +85,16 @@ const Options = struct {
             .symlink_missing = bold ++ red,
         };
 
-        const _reset = "\x1b[m";
-        const red = "\x1b[31m";
-        const green = "\x1b[32m";
-        const yellow = "\x1b[33m";
-        const blue = "\x1b[34m";
-        const purple = "\x1b[35m";
-        const cyan = "\x1b[36m";
-        const fg = "\x1b[37m";
+        pub const _reset = "\x1b[m";
+        pub const red = "\x1b[31m";
+        pub const green = "\x1b[32m";
+        pub const yellow = "\x1b[33m";
+        pub const blue = "\x1b[34m";
+        pub const purple = "\x1b[35m";
+        pub const cyan = "\x1b[36m";
+        pub const fg = "\x1b[37m";
 
-        const bold = "\x1b[1m";
+        pub const bold = "\x1b[1m";
     };
 
     fn useColor(self: Options) bool {
@@ -265,7 +263,7 @@ pub fn main() !void {
                     return stderr.writeAll(usage);
                 } else if (eql(opt, "version")) {
                     try stdout.print("lsr {s}\r\n", .{build_options.version});
-try stdout.flush();
+                    try stdout.flush();
                     return;
                 } else {
                     try stderr.print("Invalid opt: '{s}'\n", .{opt});
@@ -352,7 +350,7 @@ try stdout.flush();
             try printLong(&cmd, stdout);
         } else switch (cmd.opts.shortview) {
             .columns => try printShortColumns(cmd, stdout),
-.oneline => try printShortOnePerLine(cmd, stdout),
+            .oneline => try printShortOnePerLine(cmd, stdout),
         }
     }
     try stdout.flush();
@@ -433,7 +431,7 @@ fn printShortColumns(cmd: Command, writer: anytype) !void {
             if (i < columns.items.len - 1) {
                 const spaces = column.width - (icon_width + entry.name.len);
                 var space_buf = [_][]const u8{" "};
-        try writer.writeSplatAll(&space_buf, spaces);
+                try writer.writeSplatAll(&space_buf, spaces);
             }
         }
         try writer.writeAll("\r\n");
@@ -823,13 +821,15 @@ const Command = struct {
         for (self.groups.items) |group| {
             if (group.gid == gid) return group;
         }
-        if (grp.getgrgid(gid)) |group| {
-            const new_group = Group{
-                .gid = gid,
-                .name = std.mem.span(group.*.gr_name),
-            };
-            try self.groups.append(self.arena, new_group);
-            return new_group;
+        if (std.c.getgrgid(gid)) |group| {
+            if (group.name) |name| {
+                const new_group = Group{
+                    .gid = gid,
+                    .name = std.mem.span(name),
+                };
+                try self.groups.append(self.arena, new_group);
+                return new_group;
+            }
         }
         return null;
     }
@@ -886,7 +886,7 @@ const Symlink = struct {
     exists: bool = true,
 };
 
-const Entry = struct {
+pub const Entry = struct {
     name: [:0]const u8,
     kind: std.fs.File.Kind,
     statx: ourio.Statx,
@@ -975,7 +975,7 @@ const Entry = struct {
         return std.fmt.bufPrint(out, "{d}", .{self.statx.size});
     }
 
-    fn isExecutable(self: Entry) bool {
+    pub fn isExecutable(self: Entry) bool {
         return self.statx.mode & (posix.S.IXUSR | posix.S.IXGRP | posix.S.IXOTH) != 0;
     }
 };
@@ -1268,128 +1268,6 @@ fn onCompletion(io: *ourio.Ring, task: ourio.Task) anyerror!void {
         },
     }
 }
-
-const Icon = struct {
-    icon: []const u8,
-    color: []const u8,
-
-    // Entry types
-    const directory: Icon = .{ .icon = "󰉋", .color = Options.Colors.blue };
-    const drive: Icon = .{ .icon = "󰋊", .color = Options.Colors.blue };
-    const file: Icon = .{ .icon = "󰈤", .color = Options.Colors.fg };
-    const file_hidden: Icon = .{ .icon = "󰘓", .color = Options.Colors.fg };
-    const pipe: Icon = .{ .icon = "󰟥", .color = Options.Colors.fg };
-    const socket: Icon = .{ .icon = "󰐧", .color = Options.Colors.fg };
-    const symlink: Icon = .{ .icon = "", .color = Options.Colors.fg };
-    const symlink_dir: Icon = .{ .icon = "", .color = Options.Colors.blue };
-
-    // Broad file types
-    const executable: Icon = .{ .icon = "", .color = Options.Colors.green };
-    const image: Icon = .{ .icon = "", .color = Options.Colors.yellow };
-    const video: Icon = .{ .icon = "󰸬", .color = Options.Colors.yellow };
-
-    // Filetypes
-    const c: Icon = .{ .icon = "󰙱", .color = "\x1b[38:2:81:154:186m" };
-    const cpp: Icon = .{ .icon = "󰙲", .color = "\x1b[38:2:81:154:186m" };
-    const css: Icon = .{ .icon = "", .color = "\x1b[38:2:50:167:220m" };
-    const elisp: Icon = .{ .icon = "", .color = "\x1b[38:2:127:90:182m" };
-    const fennel: Icon = .{ .icon = "", .color = "" }; // logo color would be light-on-light in light background
-    const go: Icon = .{ .icon = "󰟓", .color = Options.Colors.blue };
-    const html: Icon = .{ .icon = "", .color = "\x1b[38:2:229:76:33m" };
-    const javascript: Icon = .{ .icon = "", .color = "\x1b[38:2:233:212:77m" };
-    const json: Icon = .{ .icon = "", .color = Options.Colors.blue };
-    const lua: Icon = .{ .icon = "󰢱", .color = Options.Colors.blue };
-    const makefile: Icon = .{ .icon = "", .color = "\x1b[38:2:227:121:51m" };
-    const markdown: Icon = .{ .icon = "", .color = "" };
-    const nix: Icon = .{ .icon = "󱄅", .color = "\x1b[38:2:127:185:228m" };
-    const python: Icon = .{ .icon = "", .color = Options.Colors.yellow };
-    const rust: Icon = .{ .icon = "", .color = "" };
-    const toml: Icon = .{ .icon = "", .color = "\x1b[38:2:156:66:33m" };
-    const typescript: Icon = .{ .icon = "", .color = Options.Colors.blue };
-    const zig: Icon = .{ .icon = "", .color = "\x1b[38:2:247:164:29m" };
-
-    const by_name: std.StaticStringMap(Icon) = .initComptime(.{
-        .{ "flake.lock", Icon.nix },
-        .{ "go.mod", Icon.go },
-        .{ "go.sum", Icon.go },
-        .{ "Makefile", Icon.makefile },
-        .{ "GNUMakefile", Icon.makefile },
-    });
-
-    const by_extension: std.StaticStringMap(Icon) = .initComptime(.{
-        .{ "c", Icon.c },
-        .{ "h", Icon.c },
-        .{ "cc", Icon.cpp },
-        .{ "cpp", Icon.cpp },
-        .{ "cxx", Icon.cpp },
-        .{ "hh", Icon.cpp },
-        .{ "hpp", Icon.cpp },
-        .{ "hxx", Icon.cpp },
-        .{ "cjs", Icon.javascript },
-        .{ "css", Icon.css },
-        .{ "drv", Icon.nix },
-        .{ "el", Icon.elisp },
-        .{ "fnl", Icon.fennel },
-        .{ "gif", Icon.image },
-        .{ "go", Icon.go },
-        .{ "html", Icon.html },
-        .{ "jpeg", Icon.image },
-        .{ "jpg", Icon.image },
-        .{ "js", Icon.javascript },
-        .{ "jsx", Icon.javascript },
-        .{ "json", Icon.json },
-        .{ "lua", Icon.lua },
-        .{ "md", Icon.markdown },
-        .{ "mjs", Icon.javascript },
-        .{ "mkv", Icon.video },
-        .{ "mp4", Icon.video },
-        .{ "nar", Icon.nix },
-        .{ "nix", Icon.nix },
-        .{ "png", Icon.image },
-        .{ "py", Icon.python },
-        .{ "rs", Icon.rust },
-        .{ "toml", Icon.toml },
-        .{ "ts", Icon.typescript },
-        .{ "tsx", Icon.typescript },
-        .{ "webp", Icon.image },
-        .{ "zig", Icon.zig },
-        .{ "zon", Icon.zig },
-    });
-
-    fn get(entry: Entry) Icon {
-        // 1. By name
-        // 2. By type
-        // 3. By extension
-        if (by_name.get(entry.name)) |icon| return icon;
-
-        switch (entry.kind) {
-            .block_device => return drive,
-            .character_device => return drive,
-            .directory => return directory,
-            .file => {
-                const ext = std.fs.path.extension(entry.name);
-                if (ext.len > 0) {
-                    const ft = ext[1..];
-                    if (by_extension.get(ft)) |icon| return icon;
-                }
-
-                if (entry.isExecutable()) {
-                    return executable;
-                }
-                return file;
-            },
-            .named_pipe => return pipe,
-            .sym_link => {
-                if (posix.S.ISDIR(entry.statx.mode)) {
-                    return symlink_dir;
-                }
-                return symlink;
-            },
-            .unix_domain_socket => return pipe,
-            else => return file,
-        }
-    }
-};
 
 fn eql(a: []const u8, b: []const u8) bool {
     return std.mem.eql(u8, a, b);

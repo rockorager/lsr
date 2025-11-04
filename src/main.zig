@@ -262,10 +262,12 @@ pub fn main() !void {
                         };
                     }
                 } else if (eql(opt, "help")) {
-                    return stderr.writeAll(usage);
+                    try stdout.writeAll(usage);
+                    try stdout.flush();
+                    return;
                 } else if (eql(opt, "version")) {
                     try stdout.print("lsr {s}\r\n", .{build_options.version});
-try stdout.flush();
+                    try stdout.flush();
                     return;
                 } else {
                     try stderr.print("Invalid opt: '{s}'\n", .{opt});
@@ -352,7 +354,7 @@ try stdout.flush();
             try printLong(&cmd, stdout);
         } else switch (cmd.opts.shortview) {
             .columns => try printShortColumns(cmd, stdout),
-.oneline => try printShortOnePerLine(cmd, stdout),
+            .oneline => try printShortOnePerLine(cmd, stdout),
         }
     }
     try stdout.flush();
@@ -433,7 +435,7 @@ fn printShortColumns(cmd: Command, writer: anytype) !void {
             if (i < columns.items.len - 1) {
                 const spaces = column.width - (icon_width + entry.name.len);
                 var space_buf = [_][]const u8{" "};
-        try writer.writeSplatAll(&space_buf, spaces);
+                try writer.writeSplatAll(&space_buf, spaces);
             }
         }
         try writer.writeAll("\r\n");

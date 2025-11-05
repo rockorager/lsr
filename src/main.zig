@@ -265,7 +265,7 @@ pub fn main() !void {
                     return stderr.writeAll(usage);
                 } else if (eql(opt, "version")) {
                     try stdout.print("lsr {s}\r\n", .{build_options.version});
-try stdout.flush();
+                    try stdout.flush();
                     return;
                 } else {
                     try stderr.print("Invalid opt: '{s}'\n", .{opt});
@@ -352,7 +352,7 @@ try stdout.flush();
             try printLong(&cmd, stdout);
         } else switch (cmd.opts.shortview) {
             .columns => try printShortColumns(cmd, stdout),
-.oneline => try printShortOnePerLine(cmd, stdout),
+            .oneline => try printShortOnePerLine(cmd, stdout),
         }
     }
     try stdout.flush();
@@ -433,7 +433,7 @@ fn printShortColumns(cmd: Command, writer: anytype) !void {
             if (i < columns.items.len - 1) {
                 const spaces = column.width - (icon_width + entry.name.len);
                 var space_buf = [_][]const u8{" "};
-        try writer.writeSplatAll(&space_buf, spaces);
+                try writer.writeSplatAll(&space_buf, spaces);
             }
         }
         try writer.writeAll("\r\n");
@@ -460,23 +460,33 @@ fn printShortEntry(entry: Entry, cmd: Command, writer: anytype) !void {
 
         try writer.writeByte(' ');
     }
+
+    var name_color: []const u8 = "";
     switch (entry.kind) {
-        .directory => try writer.writeAll(colors.dir),
-        .sym_link => try writer.writeAll(colors.symlink),
+        .directory => name_color = colors.dir,
+        .sym_link => name_color = colors.symlink,
         else => {
             if (entry.isExecutable()) {
-                try writer.writeAll(colors.executable);
+                name_color = colors.executable;
             }
         },
+    }
+
+    // If terminal colors are enabled, prefer the icon's color when available.
+    if (opts.useColor()) {
+        const icon = Icon.get(entry);
+        if (icon.color.len > 0) name_color = icon.color;
     }
 
     if (opts.useHyperlinks()) {
         const path = try std.fs.path.join(cmd.arena, &.{ cmd.current_directory, entry.name });
         try writer.print("\x1b]8;;file://{s}\x1b\\", .{path});
+        if (name_color.len > 0) try writer.writeAll(name_color);
         try writer.writeAll(entry.name);
         try writer.writeAll("\x1b]8;;\x1b\\");
         try writer.writeAll(colors.reset);
     } else {
+        if (name_color.len > 0) try writer.writeAll(name_color);
         try writer.writeAll(entry.name);
         try writer.writeAll(colors.reset);
     }
@@ -606,37 +616,50 @@ fn printTreeEntry(entry: Entry, cmd: Command, writer: anytype, dir_path: [:0]con
         try writer.writeByte(' ');
     }
 
+    // Base name color
+    var name_color: []const u8 = "";
     switch (entry.kind) {
-        .directory => try writer.writeAll(colors.dir),
-        .sym_link => try writer.writeAll(colors.symlink),
+        .directory => name_color = colors.dir,
+        .sym_link => name_color = colors.symlink,
         else => {
             const full_path = try std.fs.path.join(cmd.arena, &.{ dir_path, entry.name });
             const stat_result = std.fs.cwd().statFile(full_path) catch null;
             if (stat_result) |stat| {
                 if (stat.mode & (std.posix.S.IXUSR | std.posix.S.IXGRP | std.posix.S.IXOTH) != 0) {
-                    try writer.writeAll(colors.executable);
+                    name_color = colors.executable;
                 }
             }
         },
     }
 
+    // Prefer icon color when terminal colors are enabled
+    if (opts.useColor()) {
+        const icon = Icon.get(entry);
+        if (icon.color.len > 0) name_color = icon.color;
+    }
+
     if (opts.useHyperlinks()) {
         const path = try std.fs.path.join(cmd.arena, &.{ dir_path, entry.name });
         try writer.print("\x1b]8;;file://{s}\x1b\\", .{path});
+        if (name_color.len > 0) try writer.writeAll(name_color);
         try writer.writeAll(entry.name);
         try writer.writeAll("\x1b]8;;\x1b\\");
         try writer.writeAll(colors.reset);
     } else {
+        if (name_color.len > 0) try writer.writeAll(name_color);
         try writer.writeAll(entry.name);
         try writer.writeAll(colors.reset);
     }
 }
 
 fn printLong(cmd: *Command, writer: anytype) !void {
-    const tz = cmd.tz.?;
+    const tz = cmd.tz.?; // same as original: expect tz present when using long view
     const now = zeit.instant(.{}) catch unreachable;
     const one_year_ago = try now.subtract(.{ .days = 365 });
     const colors = cmd.opts.colors;
+    const opts = cmd.opts;
+
+    const hex_user_group = "\x1b[38;2;187;187;70m";
 
     const longest_group, const longest_user, const longest_size, const longest_suffix = blk: {
         var n_group: usize = 0;
@@ -692,15 +715,71 @@ fn printLong(cmd: *Command, writer: anytype) !void {
 
         const mode = entry.modeStr();
 
-        try writer.writeAll(&mode);
+        var symlink_mode_color: []const u8 = colors.symlink;
+        if (entry.kind == .sym_link) {
+            if (cmd.symlinks.get(entry.name)) |s| {
+                if (s.exists) {
+                    symlink_mode_color = colors.symlink_target;
+                } else {
+                    symlink_mode_color = colors.symlink_missing;
+                }
+            } else {
+                // fallback to regular symlink color (already defaulted)
+                symlink_mode_color = colors.symlink;
+            }
+        }
+
+        for (mode) |c| {
+            var wrote_color: bool = false;
+
+            if (opts.useColor()) {
+                if (c == 'l') {
+                    if (colors.symlink.len > 0) {
+                        try writer.writeAll(symlink_mode_color);
+                        wrote_color = true;
+                    }
+                } else if (c == 'd') {
+                    if (colors.dir.len > 0) {
+                        try writer.writeAll(colors.dir);
+                        wrote_color = true;
+                    }
+                } else switch (c) {
+                    'r' => {
+                        try writer.writeAll(hex_user_group);
+                        wrote_color = true;
+                    },
+                    'w' => {
+                        try writer.writeAll(Options.Colors.red);
+                        wrote_color = true;
+                    },
+                    'x' => {
+                        try writer.writeAll(Options.Colors.green);
+                        wrote_color = true;
+                    },
+                    else => {},
+                }
+            }
+            try writer.writeByte(c);
+            if (wrote_color) try writer.writeAll(colors.reset);
+        }
         try writer.writeByte(' ');
+
+        if (opts.useColor()) {
+            try writer.writeAll(hex_user_group);
+        }
         try writer.writeAll(user.name);
         var space_buf1 = [_][]const u8{" "};
         try writer.writeSplatAll(&space_buf1, longest_user - user.name.len);
+        try writer.writeAll(colors.reset);
         try writer.writeByte(' ');
+
+        if (opts.useColor()) {
+            try writer.writeAll(hex_user_group);
+        }
         try writer.writeAll(group.name);
         var space_buf2 = [_][]const u8{" "};
         try writer.writeSplatAll(&space_buf2, longest_group - group.name.len);
+        try writer.writeAll(colors.reset);
         try writer.writeByte(' ');
 
         var size_buf: [16]u8 = undefined;
@@ -709,13 +788,22 @@ fn printLong(cmd: *Command, writer: anytype) !void {
 
         var space_buf3 = [_][]const u8{" "};
         try writer.writeSplatAll(&space_buf3, longest_size - size.len);
+
+        if (opts.useColor()) {
+            try writer.writeAll(Options.Colors.green);
+        }
         try writer.writeAll(size);
         try writer.writeByte(' ');
         try writer.writeAll(suffix);
+        try writer.writeAll(colors.reset);
+
         var space_buf4 = [_][]const u8{" "};
         try writer.writeSplatAll(&space_buf4, longest_suffix - suffix.len);
         try writer.writeByte(' ');
 
+        if (opts.useColor()) {
+            try writer.writeAll(Options.Colors.blue);
+        }
         try writer.print("{d: >2} {s} ", .{
             time.day,
             time.month.shortName(),
@@ -726,7 +814,9 @@ fn printLong(cmd: *Command, writer: anytype) !void {
         } else {
             try writer.print("{d: >5} ", .{@as(u32, @intCast(time.year))});
         }
+        try writer.writeAll(colors.reset);
 
+        // Print icon if requested (unchanged)
         if (cmd.opts.useIcons()) {
             const icon = Icon.get(entry);
 
@@ -741,22 +831,32 @@ fn printLong(cmd: *Command, writer: anytype) !void {
             try writer.writeByte(' ');
         }
 
+        // Determine base name color (legacy defaults)
+        var name_color: []const u8 = "";
         switch (entry.kind) {
-            .directory => try writer.writeAll(colors.dir),
-            .sym_link => try writer.writeAll(colors.symlink),
+            .directory => name_color = colors.dir,
+            .sym_link => name_color = colors.symlink,
             else => {
                 if (entry.isExecutable()) {
-                    try writer.writeAll(colors.executable);
+                    name_color = colors.executable;
                 }
             },
+        }
+
+        // Prefer icon color for filenames only when terminal colors are enabled.
+        if (cmd.opts.useColor()) {
+            const icon = Icon.get(entry);
+            if (icon.color.len > 0) name_color = icon.color;
         }
 
         if (cmd.opts.useHyperlinks()) {
             const path = try std.fs.path.join(cmd.arena, &.{ cmd.current_directory, entry.name });
             try writer.print("\x1b]8;;file://{s}\x1b\\", .{path});
+            if (name_color.len > 0) try writer.writeAll(name_color);
             try writer.writeAll(entry.name);
             try writer.writeAll("\x1b]8;;\x1b\\");
         } else {
+            if (name_color.len > 0) try writer.writeAll(name_color);
             try writer.writeAll(entry.name);
         }
         try writer.writeAll(colors.reset);
@@ -1288,72 +1388,186 @@ const Icon = struct {
     const image: Icon = .{ .icon = "", .color = Options.Colors.yellow };
     const video: Icon = .{ .icon = "󰸬", .color = Options.Colors.yellow };
 
-    // Filetypes
-    const c: Icon = .{ .icon = "󰙱", .color = "\x1b[38:2:81:154:186m" };
-    const cpp: Icon = .{ .icon = "󰙲", .color = "\x1b[38:2:81:154:186m" };
-    const css: Icon = .{ .icon = "", .color = "\x1b[38:2:50:167:220m" };
-    const elisp: Icon = .{ .icon = "", .color = "\x1b[38:2:127:90:182m" };
-    const fennel: Icon = .{ .icon = "", .color = "" }; // logo color would be light-on-light in light background
-    const go: Icon = .{ .icon = "󰟓", .color = Options.Colors.blue };
-    const html: Icon = .{ .icon = "", .color = "\x1b[38:2:229:76:33m" };
-    const javascript: Icon = .{ .icon = "", .color = "\x1b[38:2:233:212:77m" };
+    // Format: "\x1b[38;2;R;G;Bm"
+    const root: Icon = .{ .icon = "󰦣", .color = "\x1b[38;2;23;214;240m" }; // #17D6F0
+    const rootrc: Icon = .{ .icon = "󰦣", .color = "\x1b[38;2;23;214;240m" }; // #17D6F0
+
+    const rust: Icon = .{ .icon = "", .color = "\x1b[38;2;187;28;37m" }; // rs -> #BB1C25
+    const zig: Icon = .{ .icon = "", .color = "\x1b[38;2;187;187;70m" }; // zig -> #BBBB46
+    const zon: Icon = .{ .icon = "", .color = "\x1b[38;2;187;187;70m" }; // zon -> #BBBB46
+
+    const python: Icon = .{ .icon = "", .color = "\x1b[38;2;55;118;171m" }; // #3776AB
+    const javascript: Icon = .{ .icon = "", .color = "\x1b[38;2;0;187;0m" }; // #00BB00
+    const typescript: Icon = .{ .icon = "", .color = "\x1b[38;2;49;120;198m" }; // #3178C6
+    const java: Icon = .{ .icon = "", .color = "\x1b[38;2;0;115;150m" }; // #007396
+
+    const c: Icon = .{ .icon = "", .color = "\x1b[38;2;168;185;204m" }; // #A8B9CC
+    const cpp: Icon = .{ .icon = "", .color = "\x1b[38;2;0;89;156m" }; // #00599C
+    const h: Icon = .{ .icon = "", .color = "\x1b[38;2;168;185;204m" }; // header like c
+    const hpp: Icon = .{ .icon = "", .color = "\x1b[38;2;0;89;156m" }; // header like cpp
+    const cs: Icon = .{ .icon = "󰌛", .color = "\x1b[38;2;35;145;32m" }; // #239120
+
+    const go: Icon = .{ .icon = "󰟓", .color = "\x1b[38;2;0;173;216m" }; // #00ADD8
+    const php: Icon = .{ .icon = "", .color = "\x1b[38;2;119;123;180m" }; // #777BB4
+    const rb: Icon = .{ .icon = "", .color = "\x1b[38;2;204;52;45m" }; // #CC342D
+
+    const kt: Icon = .{ .icon = "", .color = "\x1b[38;2;127;82;255m" }; // #7F52FF
+    const swift: Icon = .{ .icon = "", .color = "\x1b[38;2;240;81;56m" }; // #F05138
+    const scala: Icon = .{ .icon = "", .color = "\x1b[38;2;220;50;47m" }; // #DC322F
+    const dart: Icon = .{ .icon = "", .color = "\x1b[38;2;1;117;194m" }; // #0175C2
+    const rlang: Icon = .{ .icon = "", .color = "\x1b[38;2;39;109;195m" }; // #276DC3
+
+    const sql: Icon = .{ .icon = "", .color = "\x1b[38;2;204;41;39m" }; // #CC2927
+    const html: Icon = .{ .icon = "", .color = "\x1b[38;2;227;79;38m" }; // #E34F26
+    const css: Icon = .{ .icon = "", .color = "\x1b[38;2;21;114;182m" }; // #1572B6
+
+    const sh: Icon = .{ .icon = "", .color = "\x1b[38;2;137;224;81m" }; // #89E051
+    const lua: Icon = .{ .icon = "󰢱", .color = "\x1b[38;2;44;45;114m" }; // #2C2D72
+    const pl: Icon = .{ .icon = "", .color = "\x1b[38;2;57;69;126m" }; // #39457E
+
+    const clj: Icon = .{ .icon = "", .color = "\x1b[38;2;88;129;216m" }; // #5881D8
+    const ex: Icon = .{ .icon = "", .color = "\x1b[38;2;110;74;126m" }; // #6E4A7E
+    const erl: Icon = .{ .icon = "", .color = "\x1b[38;2;169;5;51m" }; // #A90533
+    const hs: Icon = .{ .icon = "", .color = "\x1b[38;2;93;79;133m" }; // #5D4F85
+
+    const toml: Icon = .{ .icon = "", .color = "\x1b[38;2;156;66;33m" }; // existing toml color
     const json: Icon = .{ .icon = "", .color = Options.Colors.blue };
-    const lua: Icon = .{ .icon = "󰢱", .color = Options.Colors.blue };
-    const makefile: Icon = .{ .icon = "", .color = "\x1b[38:2:227:121:51m" };
-    const markdown: Icon = .{ .icon = "", .color = "" };
-    const nix: Icon = .{ .icon = "󱄅", .color = "\x1b[38:2:127:185:228m" };
-    const python: Icon = .{ .icon = "", .color = Options.Colors.yellow };
-    const rust: Icon = .{ .icon = "", .color = "" };
-    const toml: Icon = .{ .icon = "", .color = "\x1b[38:2:156:66:33m" };
-    const typescript: Icon = .{ .icon = "", .color = Options.Colors.blue };
-    const zig: Icon = .{ .icon = "", .color = "\x1b[38:2:247:164:29m" };
+    const makefile: Icon = .{ .icon = "", .color = "\x1b[38;2;227;121;51m" }; // existing makefile
+    const markdown: Icon = .{ .icon = "", .color = Options.Colors.fg };
+    const nix: Icon = .{ .icon = "󱄅", .color = "\x1b[38;2;127;185;228m" };
+
+    // Fallbacks
+    const c_generic: Icon = .{ .icon = "", .color = Options.Colors.fg };
+    const default_file: Icon = .{ .icon = "󰈤", .color = Options.Colors.fg };
 
     const by_name: std.StaticStringMap(Icon) = .initComptime(.{
-        .{ "flake.lock", Icon.nix },
+        .{ "Cargo.toml", Icon.toml },
+        .{ "Cargo.lock", Icon.toml },
+
+        .{ "requirements.txt", Icon.python },
+        .{ "setup.py", Icon.python },
+
+        .{ "package.json", Icon.javascript },
+        .{ "package-lock.json", Icon.javascript },
+        .{ "tsconfig.json", Icon.typescript },
+
+        .{ "pom.xml", Icon.java },
+        .{ "build.gradle", Icon.java },
+        .{ "build.gradle.kts", Icon.kt },
+
+        .{ "csproj", Icon.cs },
+
         .{ "go.mod", Icon.go },
         .{ "go.sum", Icon.go },
-        .{ "Makefile", Icon.makefile },
-        .{ "GNUMakefile", Icon.makefile },
+
+        .{ "composer.json", Icon.php },
+        .{ "composer.lock", Icon.php },
+
+        .{ "Gemfile", Icon.rb },
+        .{ "Gemfile.lock", Icon.rb },
+
+        .{ "Package.swift", Icon.swift },
+
+        .{ "build.sbt", Icon.scala },
+
+        .{ "pubspec.yaml", Icon.dart },
+
+        .{ "DESCRIPTION", Icon.rlang },
+
+        .{ ".zshrc", Icon.sh },
+        .{ ".bashrc", Icon.sh },
+        .{ ".bash_profile", Icon.sh },
+        .{ ".bash_aliases", Icon.sh },
+        .{ ".bash_logout", Icon.sh },
+        .{ ".bash_history", Icon.sh },
+
+        .{ "cpanfile", Icon.pl },
+        .{ "project.clj", Icon.clj },
+        .{ "mix.exs", Icon.ex },
+        .{ "rebar.config", Icon.erl },
+        .{ "cabal", Icon.hs },
+        .{ "stack.yaml", Icon.hs },
+
+        .{ ".rootrc", Icon.rootrc },
+        .{ ".rootlogon.C", Icon.rootrc },
     });
 
     const by_extension: std.StaticStringMap(Icon) = .initComptime(.{
+        .{ "rs", Icon.rust },
+        .{ "zig", Icon.zig },
+        .{ "zon", Icon.zon },
+
+        .{ "py", Icon.python },
+        .{ "js", Icon.javascript },
+        .{ "cjs", Icon.javascript },
+        .{ "mjs", Icon.javascript },
+
+        .{ "ts", Icon.typescript },
+        .{ "tsx", Icon.typescript },
+
+        .{ "java", Icon.java },
+
         .{ "c", Icon.c },
-        .{ "h", Icon.c },
+        .{ "h", Icon.h },
         .{ "cc", Icon.cpp },
         .{ "cpp", Icon.cpp },
         .{ "cxx", Icon.cpp },
         .{ "hh", Icon.cpp },
-        .{ "hpp", Icon.cpp },
+        .{ "hpp", Icon.hpp },
         .{ "hxx", Icon.cpp },
-        .{ "cjs", Icon.javascript },
-        .{ "css", Icon.css },
-        .{ "drv", Icon.nix },
-        .{ "el", Icon.elisp },
-        .{ "fnl", Icon.fennel },
-        .{ "gif", Icon.image },
+
+        .{ "cs", Icon.cs },
         .{ "go", Icon.go },
+
+        .{ "php", Icon.php },
+        .{ "rb", Icon.rb },
+
+        .{ "kt", Icon.kt },
+        .{ "kts", Icon.kt },
+
+        .{ "swift", Icon.swift },
+        .{ "scala", Icon.scala },
+
+        .{ "dart", Icon.dart },
+        .{ "r", Icon.rlang },
+
+        .{ "sql", Icon.sql },
+
         .{ "html", Icon.html },
-        .{ "jpeg", Icon.image },
-        .{ "jpg", Icon.image },
-        .{ "js", Icon.javascript },
-        .{ "jsx", Icon.javascript },
-        .{ "json", Icon.json },
+        .{ "htm", Icon.html },
+        .{ "css", Icon.css },
+
+        .{ "sh", Icon.sh },
+        .{ "bash", Icon.sh },
+
         .{ "lua", Icon.lua },
+        .{ "pl", Icon.pl },
+
+        .{ "clj", Icon.clj },
+        .{ "cljs", Icon.clj },
+
+        .{ "ex", Icon.ex },
+        .{ "exs", Icon.ex },
+
+        .{ "erl", Icon.erl },
+
+        .{ "hs", Icon.hs },
+
+        .{ "root", Icon.root },
+
+        .{ "json", Icon.json },
+        .{ "toml", Icon.toml },
         .{ "md", Icon.markdown },
-        .{ "mjs", Icon.javascript },
-        .{ "mkv", Icon.video },
-        .{ "mp4", Icon.video },
-        .{ "nar", Icon.nix },
         .{ "nix", Icon.nix },
         .{ "png", Icon.image },
-        .{ "py", Icon.python },
-        .{ "rs", Icon.rust },
-        .{ "toml", Icon.toml },
-        .{ "ts", Icon.typescript },
-        .{ "tsx", Icon.typescript },
+        .{ "jpg", Icon.image },
+        .{ "jpeg", Icon.image },
+        .{ "gif", Icon.image },
         .{ "webp", Icon.image },
-        .{ "zig", Icon.zig },
-        .{ "zon", Icon.zig },
+        .{ "mp4", Icon.video },
+        .{ "mkv", Icon.video },
+        .{ "nar", Icon.nix },
+        .{ "drv", Icon.nix },
     });
 
     fn get(entry: Entry) Icon {

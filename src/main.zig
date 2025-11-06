@@ -659,7 +659,8 @@ fn printLong(cmd: *Command, writer: anytype) !void {
     const colors = cmd.opts.colors;
     const opts = cmd.opts;
 
-    const hex_user_group = "\x1b[38;2;187;187;70m";
+    const color_user_group = "\x1b[38;2;187;187;70m";
+    const color_dash = "\x1b[38;2;80;80;80m";
 
     const longest_group, const longest_user, const longest_size, const longest_suffix = blk: {
         var n_group: usize = 0;
@@ -733,19 +734,17 @@ fn printLong(cmd: *Command, writer: anytype) !void {
             var wrote_color: bool = false;
 
             if (opts.useColor()) {
-                if (c == 'l') {
-                    if (colors.symlink.len > 0) {
+                switch (c) {
+                    'l' => {
                         try writer.writeAll(symlink_mode_color);
                         wrote_color = true;
-                    }
-                } else if (c == 'd') {
-                    if (colors.dir.len > 0) {
+                    },
+                    'd' => {
                         try writer.writeAll(colors.dir);
                         wrote_color = true;
-                    }
-                } else switch (c) {
+                    },
                     'r' => {
-                        try writer.writeAll(hex_user_group);
+                        try writer.writeAll(color_user_group);
                         wrote_color = true;
                     },
                     'w' => {
@@ -756,7 +755,10 @@ fn printLong(cmd: *Command, writer: anytype) !void {
                         try writer.writeAll(Options.Colors.green);
                         wrote_color = true;
                     },
-                    else => {},
+                    else => {
+                        try writer.writeAll(color_dash);
+                        wrote_color = true;
+                    },
                 }
             }
             try writer.writeByte(c);
@@ -765,7 +767,7 @@ fn printLong(cmd: *Command, writer: anytype) !void {
         try writer.writeByte(' ');
 
         if (opts.useColor()) {
-            try writer.writeAll(hex_user_group);
+            try writer.writeAll(color_user_group);
         }
         try writer.writeAll(user.name);
         var space_buf1 = [_][]const u8{" "};
@@ -774,7 +776,7 @@ fn printLong(cmd: *Command, writer: anytype) !void {
         try writer.writeByte(' ');
 
         if (opts.useColor()) {
-            try writer.writeAll(hex_user_group);
+            try writer.writeAll(color_user_group);
         }
         try writer.writeAll(group.name);
         var space_buf2 = [_][]const u8{" "};
@@ -1431,18 +1433,21 @@ const Icon = struct {
     const hs: Icon = .{ .icon = "", .color = "\x1b[38;2;93;79;133m" }; // #5D4F85
 
     const toml: Icon = .{ .icon = "", .color = "\x1b[38;2;156;66;33m" }; // existing toml color
+    const yaml: Icon = .{ .icon = "", .color = "\x1b[38;2;204;25;31m" }; // #CC191F
     const json: Icon = .{ .icon = "", .color = Options.Colors.blue };
     const makefile: Icon = .{ .icon = "", .color = "\x1b[38;2;227;121;51m" }; // existing makefile
     const markdown: Icon = .{ .icon = "", .color = Options.Colors.fg };
     const nix: Icon = .{ .icon = "󱄅", .color = "\x1b[38;2;127;185;228m" };
+
+    const git: Icon = .{ .icon = "󰊢", .color = Options.Colors.fg };
 
     // Fallbacks
     const c_generic: Icon = .{ .icon = "", .color = Options.Colors.fg };
     const default_file: Icon = .{ .icon = "󰈤", .color = Options.Colors.fg };
 
     const by_name: std.StaticStringMap(Icon) = .initComptime(.{
-        .{ "Cargo.toml", Icon.toml },
-        .{ "Cargo.lock", Icon.toml },
+        .{ "Cargo.toml", Icon.rust },
+        .{ "Cargo.lock", Icon.rust },
 
         .{ "requirements.txt", Icon.python },
         .{ "setup.py", Icon.python },
@@ -1490,6 +1495,8 @@ const Icon = struct {
 
         .{ ".rootrc", Icon.rootrc },
         .{ ".rootlogon.C", Icon.rootrc },
+
+        .{ ".gitconfig", Icon.git },
     });
 
     const by_extension: std.StaticStringMap(Icon) = .initComptime(.{
@@ -1555,8 +1562,11 @@ const Icon = struct {
 
         .{ "root", Icon.root },
 
+        .{ "git", Icon.git },
+
         .{ "json", Icon.json },
         .{ "toml", Icon.toml },
+        .{ "yaml", Icon.yaml },
         .{ "md", Icon.markdown },
         .{ "nix", Icon.nix },
         .{ "png", Icon.image },

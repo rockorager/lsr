@@ -53,6 +53,8 @@ pub const Options = struct {
     winsize: ?posix.winsize = null,
     colors: Colors = .none,
 
+    pub const full_color: bool = false;
+
     const When = enum {
         never,
         auto,
@@ -212,6 +214,11 @@ pub fn main() !void {
                 } else if (eql(opt, "color")) {
                     cmd.opts.color = std.meta.stringToEnum(Options.When, val) orelse {
                         try stderr.print("Invalid color option: '{s}'\n", .{val});
+                        std.process.exit(1);
+                    };
+                } else if (eql(opt, "full-color")) {
+                    cmd.opts.all = parseArgBool(val) orelse {
+                        try stderr.print("Invalid boolean: '{s}'\n", .{val});
                         std.process.exit(1);
                     };
                 } else if (eql(opt, "human-readable")) {
@@ -464,6 +471,10 @@ fn printShortEntry(entry: Entry, cmd: Command, writer: anytype) !void {
         else => {
             if (entry.isExecutable()) {
                 try writer.writeAll(colors.executable);
+            // } else if (Options.full_color == true) {
+            } else if (true) {
+                const icon = Icon.get(entry);
+                try writer.writeAll(icon.color);
             }
         },
     }
@@ -625,6 +636,10 @@ fn printTreeEntry(entry: Entry, cmd: Command, writer: anytype, dir_path: [:0]con
         try writer.writeAll("\x1b]8;;\x1b\\");
         try writer.writeAll(colors.reset);
     } else {
+        if (Options.full_color == true) {
+            const icon = Icon.get(entry);
+            try writer.writeAll(icon.color);
+        }
         try writer.writeAll(entry.name);
         try writer.writeAll(colors.reset);
     }
@@ -745,6 +760,9 @@ fn printLong(cmd: *Command, writer: anytype) !void {
             else => {
                 if (entry.isExecutable()) {
                     try writer.writeAll(colors.executable);
+                } else if (Options.full_color == true) {
+                    const icon = Icon.get(entry);
+                    try writer.writeAll(icon.color);
                 }
             },
         }

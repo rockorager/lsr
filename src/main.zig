@@ -148,18 +148,18 @@ pub fn main() !void {
     var sfb = std.heap.stackFallback(1 << 20, arena.allocator());
     const allocator = sfb.get();
 
-    var cmd: Command = .{ .arena = allocator };
-
-    cmd.opts.winsize = getWinsize(std.fs.File.stdout().handle);
-
-    cmd.opts.shortview = if (cmd.opts.isatty()) .columns else .oneline;
-
     var stdout_buf: [4096]u8 = undefined;
     var stderr_buf: [4096]u8 = undefined;
     var stdout_writer = std.fs.File.stdout().writer(&stdout_buf);
     var stderr_writer = std.fs.File.stderr().writer(&stderr_buf);
     var stdout = &stdout_writer.interface;
     var stderr = &stderr_writer.interface;
+    var cmd: Command = .{ .arena = allocator, .stderr = stderr };
+
+    cmd.opts.winsize = getWinsize(std.fs.File.stdout().handle);
+
+    cmd.opts.shortview = if (cmd.opts.isatty()) .columns else .oneline;
+
 
     var args = std.process.args();
     // skip binary
@@ -799,6 +799,7 @@ const Command = struct {
     tz: ?zeit.TimeZone = null,
     groups: std.ArrayListUnmanaged(Group) = .empty,
     users: std.ArrayListUnmanaged(User) = .empty,
+    stderr: *std.Io.Writer,
 
     fn getUser(self: *Command, uid: posix.uid_t) !?User {
         for (self.users.items) |user| {
@@ -1008,6 +1009,16 @@ fn onCompletion(io: *ourio.Ring, task: ourio.Task) anyerror!void {
                                 .msg = @intFromEnum(Msg.cwd),
                             },
                         );
+                        return;
+                    },
+                    error.AccessDenied => {
+                        try cmd.stderr.print("cannot access '{s}': Permission denied\n", .{task.req.open.path});
+                        try cmd.stderr.flush();
+                        return;
+                    },
+                    error.FileNotFound => {
+                        try cmd.stderr.print("cannot access '{s}': No such file or directory\n", .{task.req.open.path});
+                        try cmd.stderr.flush();
                         return;
                     },
                     else => return err,

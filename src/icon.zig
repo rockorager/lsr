@@ -55,7 +55,6 @@ const python: Icon = .{ .icon = "", .color = "\x1b[38;2;55;118;171m" }; // #3
 const rb: Icon = .{ .icon = "", .color = "\x1b[38;2;204;52;45m" }; // #CC342D
 const rlang: Icon = .{ .icon = "", .color = "\x1b[38;2;39;109;195m" }; // #276DC3
 const root: Icon = .{ .icon = "󰦣", .color = "\x1b[38;2;23;214;240m" }; // #17D6F0
-const rootrc: Icon = .{ .icon = "󰦣", .color = "\x1b[38;2;23;214;240m" }; // #17D6F0
 const rust: Icon = .{ .icon = "", .color = "\x1b[38;2;187;28;37m" }; // rs -> #BB1C25
 const scala: Icon = .{ .icon = "", .color = "\x1b[38;2;220;50;47m" }; // #DC322F
 const sh: Icon = .{ .icon = "", .color = "\x1b[38;2;137;224;81m" }; // #89E051
@@ -74,8 +73,8 @@ const by_name: std.StaticStringMap(Icon) = .initComptime(.{
     .{ ".bashrc", Icon.sh },
     .{ ".gitconfig", Icon.git },
     .{ ".gitignore", Icon.git },
-    .{ ".rootlogon.C", Icon.rootrc },
-    .{ ".rootrc", Icon.rootrc },
+    .{ ".rootlogon.C", Icon.root },
+    .{ ".rootrc", Icon.root },
     .{ ".zshrc", Icon.sh },
     .{ "DESCRIPTION", Icon.rlang },
     .{ "GNUMakefile", Icon.makefile },

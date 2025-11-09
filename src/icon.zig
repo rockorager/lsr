@@ -29,6 +29,7 @@ const video: Icon = .{ .icon = "󰸬", .color = Options.Colors.yellow };
 // Format: "\x1b[38;2;R;G;Bm"
 const c: Icon = .{ .icon = "", .color = "\x1b[38;2;168;185;204m" }; // #A8B9CC
 const clj: Icon = .{ .icon = "", .color = "\x1b[38;2;88;129;216m" }; // #5881D8
+const cmake: Icon = .{ .icon = "", .color = "\x1b[38;2;221;228;237m" }; // #DDE4ED
 const cpp: Icon = .{ .icon = "", .color = "\x1b[38;2;0;89;156m" }; // #00599C
 const cs: Icon = .{ .icon = "󰌛", .color = "\x1b[38;2;35;145;32m" }; // #239120
 const css: Icon = .{ .icon = "", .color = "\x1b[38;2;21;114;182m" }; // #1572B6
@@ -48,7 +49,7 @@ const kt: Icon = .{ .icon = "", .color = "\x1b[38;2;127;82;255m" }; // #7F52F
 const lua: Icon = .{ .icon = "󰢱", .color = "\x1b[38;2;44;45;114m" }; // #2C2D72
 const makefile: Icon = .{ .icon = "", .color = "\x1b[38;2;227;121;51m" }; // existing makefile
 const markdown: Icon = .{ .icon = "", .color = Options.Colors.fg };
-const nix: Icon = .{ .icon = "󱄅", .color = "\x1b[38;2;127;185;228m" };
+const nix: Icon = .{ .icon = "󱄅", .color = "\x1b[38;2;127;185;228m" }; // #7fb9e4
 const php: Icon = .{ .icon = "", .color = "\x1b[38;2;119;123;180m" }; // #777BB4
 const pl: Icon = .{ .icon = "", .color = "\x1b[38;2;57;69;126m" }; // #39457E
 const python: Icon = .{ .icon = "", .color = "\x1b[38;2;55;118;171m" }; // #3776AB
@@ -71,8 +72,10 @@ const by_name: std.StaticStringMap(Icon) = .initComptime(.{
     .{ ".bash_profile", Icon.sh },
     .{ ".bash_logout", Icon.sh },
     .{ ".bashrc", Icon.sh },
+    .{ ".gitattributes", Icon.git },
     .{ ".gitconfig", Icon.git },
     .{ ".gitignore", Icon.git },
+    .{ ".mailmap", Icon.git },
     .{ ".rootlogon.C", Icon.root },
     .{ ".rootrc", Icon.root },
     .{ ".zshrc", Icon.sh },
@@ -84,6 +87,8 @@ const by_name: std.StaticStringMap(Icon) = .initComptime(.{
     .{ "Package.swift", Icon.swift },
     .{ "Cargo.lock", Icon.rust },
     .{ "Cargo.toml", Icon.rust },
+    .{ "CMakeCache.txt", Icon.cmake},
+    .{ "CMakeLists.txt", Icon.cmake},
     .{ "build.gradle", Icon.java },
     .{ "build.gradle.kts", Icon.kt },
     .{ "build.sbt", Icon.scala },
@@ -98,6 +103,7 @@ const by_name: std.StaticStringMap(Icon) = .initComptime(.{
     .{ "flake.lock", Icon.nix },
     .{ "go.mod", Icon.go },
     .{ "go.sum", Icon.go },
+    .{ "install_manifest.txt", Icon.cmake },
     .{ "mix.exs", Icon.ex },
     .{ "package-lock.json", Icon.javascript },
     .{ "package.json", Icon.javascript },
@@ -117,6 +123,8 @@ const by_extension: std.StaticStringMap(Icon) = .initComptime(.{
     .{ "cjs", Icon.javascript },
     .{ "clj", Icon.clj },
     .{ "cljs", Icon.clj },
+    .{ "cmake", Icon.cmake },
+    .{ "cmake.in", Icon.cmake },
     .{ "cpp", Icon.cpp },
     .{ "cxx", Icon.cpp },
     .{ "cs", Icon.cs },

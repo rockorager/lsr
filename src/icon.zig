@@ -64,7 +64,7 @@ const swift: Icon = .{ .icon = "", .color = "\x1b[38;2;240;81;56m" }; // #F05
 const toml: Icon = .{ .icon = "", .color = "\x1b[38;2;156;66;33m" }; // existing toml color
 const typescript: Icon = .{ .icon = "", .color = "\x1b[38;2;49;120;198m" }; // #3178C6
 const yaml: Icon = .{ .icon = "", .color = "\x1b[38;2;204;25;31m" }; // #CC191F
-const zig: Icon = .{ .icon = "", .color = "\x1b[38;2;187;187;70m" }; // zig -> #BBBB46
+const zig: Icon = .{ .icon = "", .color = "\x1b[38;2;247;164;71m" }; // zig -> #F7A447
 
 const by_name: std.StaticStringMap(Icon) = .initComptime(.{
     .{ ".bash_aliases", Icon.sh },

@@ -27,11 +27,11 @@ const video: Icon = .{ .icon = "󰸬", .color = Options.Colors.yellow };
 
 // Filetypes
 // Format: "\x1b[38;2;R;G;Bm"
-const c: Icon = .{ .icon = "", .color = "\x1b[38;2;168;185;204m" }; // #A8B9CC
+const c: Icon = .{ .icon = "", .color = "\x1b[38;2;127;139;153m" }; // #7F8B99
 const clj: Icon = .{ .icon = "", .color = "\x1b[38;2;88;129;216m" }; // #5881D8
-const cmake: Icon = .{ .icon = "", .color = "\x1b[38;2;221;228;237m" }; // #DDE4ED
+const cmake: Icon = .{ .icon = "", .color = "\x1b[38;2;33;153;72m" }; // #219948
 const cpp: Icon = .{ .icon = "", .color = "\x1b[38;2;0;89;156m" }; // #00599C
-const cs: Icon = .{ .icon = "󰌛", .color = "\x1b[38;2;35;145;32m" }; // #239120
+const cs: Icon = .{ .icon = "", .color = "\x1b[38;2;115;85;221m" }; // #7355dd
 const css: Icon = .{ .icon = "", .color = "\x1b[38;2;21;114;182m" }; // #1572B6
 const dart: Icon = .{ .icon = "", .color = "\x1b[38;2;1;117;194m" }; // #0175C2
 const elisp: Icon = .{ .icon = "", .color = "\x1b[38:2:127:90:182m" }; // #7f5ab6
@@ -46,20 +46,22 @@ const java: Icon = .{ .icon = "", .color = "\x1b[38;2;0;115;150m" }; // #0073
 const javascript: Icon = .{ .icon = "", .color = "\x1b[38;2;0;187;0m" }; // #00BB00
 const json: Icon = .{ .icon = "", .color = Options.Colors.blue };
 const kt: Icon = .{ .icon = "", .color = "\x1b[38;2;127;82;255m" }; // #7F52FF
-const lua: Icon = .{ .icon = "󰢱", .color = "\x1b[38;2;44;45;114m" }; // #2C2D72
+const lua: Icon = .{ .icon = "󰢱", .color = "\x1b[38;2;0;0;124m" }; // #00007C
 const makefile: Icon = .{ .icon = "", .color = "\x1b[38;2;227;121;51m" }; // existing makefile
 const markdown: Icon = .{ .icon = "", .color = Options.Colors.fg };
+const nim: Icon = .{ .icon = "", .color = "\x1b[38;2;254;233;89m" }; // #FEE959
 const nix: Icon = .{ .icon = "󱄅", .color = "\x1b[38;2;127;185;228m" }; // #7fb9e4
 const php: Icon = .{ .icon = "", .color = "\x1b[38;2;119;123;180m" }; // #777BB4
-const pl: Icon = .{ .icon = "", .color = "\x1b[38;2;57;69;126m" }; // #39457E
+const ocaml: Icon = .{ .icon = "", .color = "\x1b[38;2;241;136;63m" }; // #F1883F
+const pl: Icon = .{ .icon = "", .color = "\x1b[38;2;0;79;120m" }; // #004F78
 const python: Icon = .{ .icon = "", .color = "\x1b[38;2;55;118;171m" }; // #3776AB
 const rb: Icon = .{ .icon = "", .color = "\x1b[38;2;204;52;45m" }; // #CC342D
 const rlang: Icon = .{ .icon = "", .color = "\x1b[38;2;39;109;195m" }; // #276DC3
 const root: Icon = .{ .icon = "󰦣", .color = "\x1b[38;2;23;214;240m" }; // #17D6F0
-const rust: Icon = .{ .icon = "", .color = "\x1b[38;2;187;28;37m" }; // rs -> #BB1C25
+const rust: Icon = .{ .icon = "", .color = "\x1b[38;2;211;69;22m" }; // #D34516
 const scala: Icon = .{ .icon = "", .color = "\x1b[38;2;220;50;47m" }; // #DC322F
 const sh: Icon = .{ .icon = "", .color = "\x1b[38;2;137;224;81m" }; // #89E051
-const sql: Icon = .{ .icon = "", .color = "\x1b[38;2;204;41;39m" }; // #CC2927
+const sql: Icon = .{ .icon = "", .color = "\x1b[38;2;229;101;54m" }; // #E56536
 const swift: Icon = .{ .icon = "", .color = "\x1b[38;2;240;81;56m" }; // #F05138
 const toml: Icon = .{ .icon = "", .color = "\x1b[38;2;156;66;33m" }; // existing toml color
 const typescript: Icon = .{ .icon = "", .color = "\x1b[38;2;49;120;198m" }; // #3178C6
@@ -123,8 +125,16 @@ const by_extension: std.StaticStringMap(Icon) = .initComptime(.{
     .{ "cjs", Icon.javascript },
     .{ "clj", Icon.clj },
     .{ "cljs", Icon.clj },
+    .{ "cma", Icon.ocaml },
     .{ "cmake", Icon.cmake },
     .{ "cmake.in", Icon.cmake },
+    .{ "cmi", Icon.ocaml },
+    .{ "cmo", Icon.ocaml },
+    .{ "cmt", Icon.ocaml },
+    .{ "cmti", Icon.ocaml },
+    .{ "cmx", Icon.ocaml },
+    .{ "cmxa", Icon.ocaml },
+    .{ "cmxs", Icon.ocaml },
     .{ "cpp", Icon.cpp },
     .{ "cxx", Icon.cpp },
     .{ "cs", Icon.cs },
@@ -158,9 +168,14 @@ const by_extension: std.StaticStringMap(Icon) = .initComptime(.{
     .{ "md", Icon.markdown },
     .{ "mjs", Icon.javascript },
     .{ "mkv", Icon.video },
+    .{ "ml", Icon.ocaml },
+    .{ "mli", Icon.ocaml },
     .{ "mp4", Icon.video },
     .{ "nar", Icon.nix },
+    .{ "nim", Icon.nim },
+    .{ "nimble", Icon.nim },
     .{ "nix", Icon.nix },
+    .{ "opam", Icon.ocaml },
     .{ "php", Icon.php },
     .{ "pl", Icon.pl },
     .{ "png", Icon.image },

@@ -260,7 +260,9 @@ pub fn main() !void {
                         };
                     }
                 } else if (eql(opt, "help")) {
-                    return stderr.writeAll(usage);
+                    try stdout.writeAll(usage);
+                    try stdout.flush();
+                    return;
                 } else if (eql(opt, "version")) {
                     try stdout.print("lsr {s}\r\n", .{build_options.version});
                     try stdout.flush();

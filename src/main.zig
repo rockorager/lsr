@@ -53,6 +53,8 @@ pub const Options = struct {
     winsize: ?posix.winsize = null,
     colors: Colors = .none,
 
+    pub var full_color: bool = false;
+
     const When = enum {
         never,
         auto,
@@ -212,6 +214,11 @@ pub fn main() !void {
                 } else if (eql(opt, "color")) {
                     cmd.opts.color = std.meta.stringToEnum(Options.When, val) orelse {
                         try stderr.print("Invalid color option: '{s}'\n", .{val});
+                        std.process.exit(1);
+                    };
+                } else if (eql(opt, "full-color")) {
+                    Options.full_color = parseArgBool(val) orelse {
+                        try stderr.print("Invalid boolean: '{s}'\n", .{val});
                         std.process.exit(1);
                     };
                 } else if (eql(opt, "human-readable")) {
@@ -464,6 +471,9 @@ fn printShortEntry(entry: Entry, cmd: Command, writer: anytype) !void {
         else => {
             if (entry.isExecutable()) {
                 try writer.writeAll(colors.executable);
+            } else if (Options.full_color == true) {
+                const icon = Icon.get(entry);
+                try writer.writeAll(icon.color);
             }
         },
     }
@@ -613,6 +623,9 @@ fn printTreeEntry(entry: Entry, cmd: Command, writer: anytype, dir_path: [:0]con
             if (stat_result) |stat| {
                 if (stat.mode & (std.posix.S.IXUSR | std.posix.S.IXGRP | std.posix.S.IXOTH) != 0) {
                     try writer.writeAll(colors.executable);
+                } else if (Options.full_color == true) {
+                    const icon = Icon.get(entry);
+                    try writer.writeAll(icon.color);
                 }
             }
         },
@@ -625,6 +638,10 @@ fn printTreeEntry(entry: Entry, cmd: Command, writer: anytype, dir_path: [:0]con
         try writer.writeAll("\x1b]8;;\x1b\\");
         try writer.writeAll(colors.reset);
     } else {
+        if (Options.full_color == true) {
+            const icon = Icon.get(entry);
+            try writer.writeAll(icon.color);
+        }
         try writer.writeAll(entry.name);
         try writer.writeAll(colors.reset);
     }
@@ -635,6 +652,7 @@ fn printLong(cmd: *Command, writer: anytype) !void {
     const now = zeit.instant(.{}) catch unreachable;
     const one_year_ago = try now.subtract(.{ .days = 365 });
     const colors = cmd.opts.colors;
+    const color_dash = "\x1b[38;2;80;80;80m";
 
     const longest_group, const longest_user, const longest_size, const longest_suffix = blk: {
         var n_group: usize = 0;
@@ -690,8 +708,58 @@ fn printLong(cmd: *Command, writer: anytype) !void {
 
         const mode = entry.modeStr();
 
-        try writer.writeAll(&mode);
+        if (Options.full_color == true) {
+            var wrote_color: bool = false;
+            var symlink_mode_color: []const u8 = colors.symlink;
+            if (entry.kind == .sym_link) {
+                if (cmd.symlinks.get(entry.name)) |s| {
+                    if (s.exists) {
+                        symlink_mode_color = colors.symlink_target;
+                    } else {
+                        symlink_mode_color = colors.symlink_missing;
+                    }
+                } else {
+                    // fallback to regular symlink color (already defaulted)
+                    symlink_mode_color = colors.symlink;
+                }
+            }
+            for (mode) |c| {
+                switch (c) {
+                    'l' => {
+                        try writer.writeAll(symlink_mode_color);
+                        wrote_color = true;
+                    },
+                    'd' => {
+                        try writer.writeAll(colors.dir);
+                        wrote_color = true;
+                    },
+                    'r' => {
+                        try writer.writeAll(Options.Colors.yellow);
+                        wrote_color = true;
+                    },
+                    'w' => {
+                        try writer.writeAll(Options.Colors.red);
+                        wrote_color = true;
+                    },
+                    'x' => {
+                        try writer.writeAll(Options.Colors.green);
+                        wrote_color = true;
+                    },
+                    else => {
+                        try writer.writeAll(color_dash);
+                        wrote_color = true;
+                    },
+                }
+                try writer.writeByte(c);
+                if (wrote_color) try writer.writeAll(colors.reset);
+            }
+        } else {
+            try writer.writeAll(&mode);
+        }
         try writer.writeByte(' ');
+        if (Options.full_color == true) {
+            try writer.writeAll(Options.Colors.yellow);
+        }
         try writer.writeAll(user.name);
         var space_buf1 = [_][]const u8{" "};
         try writer.writeSplatAll(&space_buf1, longest_user - user.name.len);
@@ -700,11 +768,15 @@ fn printLong(cmd: *Command, writer: anytype) !void {
         var space_buf2 = [_][]const u8{" "};
         try writer.writeSplatAll(&space_buf2, longest_group - group.name.len);
         try writer.writeByte(' ');
+        try writer.writeAll(colors.reset);
 
         var size_buf: [16]u8 = undefined;
         const size = try entry.humanReadableSize(&size_buf);
         const suffix = entry.humanReadableSuffix();
 
+        if (Options.full_color == true) {
+            try writer.writeAll(Options.Colors.green);
+        }
         var space_buf3 = [_][]const u8{" "};
         try writer.writeSplatAll(&space_buf3, longest_size - size.len);
         try writer.writeAll(size);
@@ -713,7 +785,11 @@ fn printLong(cmd: *Command, writer: anytype) !void {
         var space_buf4 = [_][]const u8{" "};
         try writer.writeSplatAll(&space_buf4, longest_suffix - suffix.len);
         try writer.writeByte(' ');
+        try writer.writeAll(colors.reset);
 
+        if (Options.full_color == true) {
+            try writer.writeAll(Options.Colors.blue);
+        }
         try writer.print("{d: >2} {s} ", .{
             time.day,
             time.month.shortName(),
@@ -724,6 +800,7 @@ fn printLong(cmd: *Command, writer: anytype) !void {
         } else {
             try writer.print("{d: >5} ", .{@as(u32, @intCast(time.year))});
         }
+        try writer.writeAll(colors.reset);
 
         if (cmd.opts.useIcons()) {
             const icon = Icon.get(entry);
@@ -745,6 +822,9 @@ fn printLong(cmd: *Command, writer: anytype) !void {
             else => {
                 if (entry.isExecutable()) {
                     try writer.writeAll(colors.executable);
+                } else if (Options.full_color == true) {
+                    const icon = Icon.get(entry);
+                    try writer.writeAll(icon.color);
                 }
             },
         }

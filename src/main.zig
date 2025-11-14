@@ -652,7 +652,6 @@ fn printLong(cmd: *Command, writer: anytype) !void {
     const now = zeit.instant(.{}) catch unreachable;
     const one_year_ago = try now.subtract(.{ .days = 365 });
     const colors = cmd.opts.colors;
-    const color_read_user_group = "\x1b[38;2;187;187;70m";
     const color_dash = "\x1b[38;2;80;80;80m";
 
     const longest_group, const longest_user, const longest_size, const longest_suffix = blk: {
@@ -735,7 +734,7 @@ fn printLong(cmd: *Command, writer: anytype) !void {
                         wrote_color = true;
                     },
                     'r' => {
-                        try writer.writeAll(color_read_user_group);
+                        try writer.writeAll(Options.Colors.yellow);
                         wrote_color = true;
                     },
                     'w' => {
@@ -759,7 +758,7 @@ fn printLong(cmd: *Command, writer: anytype) !void {
         }
         try writer.writeByte(' ');
         if (Options.full_color == true) {
-            try writer.writeAll(color_read_user_group);
+            try writer.writeAll(Options.Colors.yellow);
         }
         try writer.writeAll(user.name);
         var space_buf1 = [_][]const u8{" "};

@@ -9,7 +9,7 @@ const build_options = @import("build_options");
 const posix = std.posix;
 
 const usage =
-    \\Usage: 
+    \\Usage:
     \\  lsr [options] [path...]
     \\
     \\  --help                           Print this message and exit
@@ -160,7 +160,6 @@ pub fn main() !void {
 
     cmd.opts.shortview = if (cmd.opts.isatty()) .columns else .oneline;
 
-
     var args = std.process.args();
     // skip binary
     _ = args.next();
@@ -260,7 +259,9 @@ pub fn main() !void {
                         };
                     }
                 } else if (eql(opt, "help")) {
-                    return stderr.writeAll(usage);
+                    try stdout.writeAll(usage);
+                    try stdout.flush();
+                    return;
                 } else if (eql(opt, "version")) {
                     try stdout.print("lsr {s}\r\n", .{build_options.version});
                     try stdout.flush();

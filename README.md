@@ -6,7 +6,7 @@
 
 ## Installation
 
-`lsr` uses the zig build system. To install, you will need zig 0.14.0. To
+`lsr` uses the zig build system. To install, you will need zig 0.15.1. To
 install for the local user (assuming `$HOME/.local/bin` is in `$PATH`), run:
 
 ```sh

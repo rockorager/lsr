@@ -1087,11 +1087,10 @@ fn onCompletion(io: *ourio.Ring, task: ourio.Task) anyerror!void {
             }
             cmd.entries = results.items;
 
-            for (cmd.entries, 0..) |*entry, i| {
-                if (i >= queue_size) {
-                    cmd.entry_idx = i;
-                    break;
-                }
+            // Reserve space for the directory close and the three metadata operations.
+            // The pinned ourio drops a task when a submission batch exceeds the ring size.
+            cmd.entry_idx = @min(cmd.entries.len, queue_size - 4);
+            for (cmd.entries[0..cmd.entry_idx]) |*entry| {
                 const path = try std.fs.path.joinZ(
                     cmd.arena,
                     &.{ cmd.current_directory, entry.name },
@@ -1320,4 +1319,87 @@ fn optKind(a: []const u8) enum { short, long, positional } {
 
 test "ref" {
     _ = natord;
+}
+
+test "directory stat batches leave room for metadata operations" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const path = try tmp.dir.realpathAlloc(std.testing.allocator, ".");
+    defer std.testing.allocator.free(path);
+
+    var created: usize = 0;
+    for ([_]usize{ 0, 1, 251, 252, 253, 254, 255, 256, 257, 769 }) |count| {
+        while (created < count) : (created += 1) {
+            var name_buf: [32]u8 = undefined;
+            const name = try std.fmt.bufPrint(&name_buf, "file{d:0>5}", .{created});
+            switch (created % 7) {
+                1 => try tmp.dir.symLink("file00000", name, .{}),
+                2 => try tmp.dir.symLink("missing", name, .{}),
+                else => {
+                    const file = try tmp.dir.createFile(name, .{});
+                    defer file.close();
+                    try file.setEndPos(created + 1);
+                },
+            }
+        }
+
+        var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+        defer arena.deinit();
+        var stderr = std.Io.Writer.Allocating.init(arena.allocator());
+        var cmd: Command = .{
+            .arena = arena.allocator(),
+            .stderr = &stderr.writer,
+            .opts = .{ .long = true },
+            .current_directory = try arena.allocator().dupeZ(u8, path),
+        };
+        var ring: ourio.Ring = try .init(std.testing.allocator, queue_size);
+        defer ring.deinit();
+
+        // Force the directory callback to share a batch with all three metadata operations.
+        inline for (.{ "/etc/localtime", "/etc/passwd", "/etc/group" }, .{ Msg.localtime, Msg.passwd, Msg.group }) |metadata_path, msg| {
+            _ = try ring.open(metadata_path, .{ .CLOEXEC = true }, 0, .{
+                .ptr = &cmd,
+                .cb = onCompletion,
+                .msg = @intFromEnum(msg),
+            });
+        }
+        const dir = try std.fs.openDirAbsolute(path, .{ .iterate = true });
+        // onCompletion queues the close and takes ownership of dir.fd.
+        try onCompletion(&ring, .{
+            .userdata = &cmd,
+            .msg = @intFromEnum(Msg.cwd),
+            .req = .{ .open = .{ .path = cmd.current_directory, .flags = .{}, .mode = 0 } },
+            .result = .{ .open = dir.fd },
+        });
+
+        var initial_stats: usize = 0;
+        var pending = ring.submission_q.head;
+        while (pending) |task| : (pending = task.next) {
+            if (task.req == .statx) initial_stats += 1;
+        }
+        try std.testing.expectEqual(initial_stats, cmd.entry_idx);
+
+        while (true) {
+            try std.testing.expect(ring.submission_q.len() <= queue_size);
+            try ring.run(.once);
+            if (ring.backend.done() and ring.submission_q.empty()) break;
+        }
+
+        try std.testing.expectEqual(count, cmd.entries.len);
+        try std.testing.expectEqual(count, cmd.entry_idx);
+        try std.testing.expect(cmd.tz != null);
+        for (cmd.entries) |entry| {
+            const index = try std.fmt.parseInt(usize, entry.name[4..], 10);
+            const expected_size: u64 = switch (index % 7) {
+                1 => 1,
+                2 => "missing".len,
+                else => index + 1,
+            };
+            try std.testing.expectEqual(expected_size, entry.statx.size);
+            if (entry.kind == .sym_link) {
+                const link = cmd.symlinks.get(entry.name).?;
+                try std.testing.expectEqual(index % 7 == 1, link.exists);
+            }
+        }
+    }
 }
